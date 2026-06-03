@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.devcrew/
+docs/devcrew/
+.idea/
+coverage/
+*.log

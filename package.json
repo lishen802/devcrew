@@ -1,0 +1,33 @@
+{
+  "name": "devcrew",
+  "version": "0.1.0",
+  "description": "Multi-host agent workflow service for Codex and Claude Code.",
+  "type": "module",
+  "license": "Apache-2.0",
+  "bin": {
+    "devcrew": "./dist/packages/cli/src/index.js"
+  },
+  "files": [
+    "dist/packages",
+    "packages",
+    "docs",
+    "examples",
+    "README.md",
+    "LICENSE",
+    "CONTRIBUTING.md",
+    "SECURITY.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "validate": "npm run build && npm test"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.8.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -12,6 +12,7 @@ The first release is intentionally local-first. DevCrew stores workflow state an
 
 - Gated phases for requirements, architecture, implementation planning, and test reporting.
 - Two workflow modes: `feature` for existing repositories and `greenfield` for new products.
+- Safe execution modes: `plan` is the default; `apply` must be explicitly requested before implementer/tester roles can write files or run validation commands.
 - Host-preferred backend selection: Codex runs default to Codex, Claude Code runs default to Claude.
 - Orchestrated role execution: `devcrew_start` runs the PM role, and `devcrew_continue` runs the next phase role before opening the gate.
 - Repository artifacts in `.devcrew/runs/<run-id>/state.json` and `docs/devcrew/<run-id>/`.
@@ -68,6 +69,27 @@ Use DevCrew to plan and implement audit logging for the billing API.
 
 The agent should call `devcrew_start`, show the PM-generated requirements artifact, then wait for approval before moving to architecture. After each approval, `devcrew_continue` runs the next role and writes its Markdown artifact before opening the next gate.
 
+By default DevCrew runs in `plan` mode. To allow the implementer/tester phases to make repository changes and run configured verification commands, explicitly request apply mode:
+
+```text
+Use DevCrew in apply mode to implement audit logging for the billing API.
+```
+
+Configure verification commands in `.devcrew/config.json`:
+
+```json
+{
+  "version": 1,
+  "defaultBackend": "host-preferred",
+  "executionMode": "plan",
+  "verifyCommands": ["npm run validate"],
+  "workflow": {
+    "gates": ["requirements", "architecture", "implementation", "testing"],
+    "artifactDirectory": "docs/devcrew"
+  }
+}
+```
+
 ## Development
 
 ```bash
@@ -76,7 +98,7 @@ npm run build
 npm run validate
 ```
 
-The SDK adapters use deterministic local fallback output when Codex or Claude SDK packages are not installed. This keeps local tests reliable while preserving the adapter boundary for real host integration.
+The SDK adapters use deterministic local fallback output when Codex or Claude SDK packages are not installed. This keeps local tests reliable while preserving the adapter boundary for real host integration. In `apply` mode, DevCrew still inherits the host sandbox and approval boundaries.
 
 ## Documentation
 

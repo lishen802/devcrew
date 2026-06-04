@@ -12,6 +12,7 @@ DevCrew 是一个面向 Codex、Claude Code 等编程 Agent 的本地工作流�
 
 - 内置阶段门禁：需求确认、架构确认、实现计划确认、测试报告确认。
 - 支持两种工作流：`feature` 用于已有项目功能开发，`greenfield` 用于从零开始的新产品。
+- 支持安全执行模式：默认是 `plan`，只有显式请求 `apply` 时，implementer/tester 阶段才允许写文件或运行验证命令。
 - 默认按当前宿主选择后端：在 Codex 中优先使用 Codex，在 Claude Code 中优先使用 Claude。
 - 已接入角色编排：`devcrew_start` 会先运行 PM 角色，`devcrew_continue` 会运行下一阶段角色，然后再打开阶段门禁。
 - 运行状态写入 `.devcrew/runs/<run-id>/state.json`，评审产物写入 `docs/devcrew/<run-id>/`。
@@ -82,6 +83,27 @@ devcrew serve --stdio
 4. 需求确认后，`devcrew_continue` 会运行架构师角色，再依次进入实现计划和测试验收。
 5. 所有产物都会保存在 `docs/devcrew/<run-id>/`，方便审查和版本管理。
 
+默认情况下 DevCrew 使用安全的 `plan` 模式。如果你希望 implementer/tester 阶段真正修改仓库并运行配置好的验证命令，需要明确要求 apply 模式：
+
+```text
+使用 DevCrew apply 模式帮我实现 billing API 的审计日志功能。
+```
+
+验证命令可以写在 `.devcrew/config.json`：
+
+```json
+{
+  "version": 1,
+  "defaultBackend": "host-preferred",
+  "executionMode": "plan",
+  "verifyCommands": ["npm run validate"],
+  "workflow": {
+    "gates": ["requirements", "architecture", "implementation", "testing"],
+    "artifactDirectory": "docs/devcrew"
+  }
+}
+```
+
 ## 开发命令
 
 ```bash
@@ -90,7 +112,7 @@ npm run build
 npm run validate
 ```
 
-当前适配器在未安装 Codex SDK 或 Claude SDK 时会使用确定性的本地 fallback 输出。这样可以保证测试和演示稳定，同时保留后续接入真实宿主 SDK 的边界。
+当前适配器在未安装 Codex SDK 或 Claude SDK 时会使用确定性的本地 fallback 输出。这样可以保证测试和演示稳定，同时保留接入真实宿主 SDK 的边界。即使在 `apply` 模式下，DevCrew 仍然继承宿主的 sandbox、审批和工具权限。
 
 ## 文档
 

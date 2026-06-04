@@ -1,4 +1,5 @@
 export const WORKFLOW_MODES = ["feature", "greenfield"] as const;
+export const EXECUTION_MODES = ["plan", "apply"] as const;
 export const HOSTS = ["codex", "claude"] as const;
 export const BACKENDS = ["codex", "claude", "local"] as const;
 export const PHASES = [
@@ -19,6 +20,7 @@ export const ARTIFACTS = [
 ] as const;
 
 export type WorkflowMode = (typeof WORKFLOW_MODES)[number];
+export type ExecutionMode = (typeof EXECUTION_MODES)[number];
 export type Host = (typeof HOSTS)[number];
 export type BackendName = (typeof BACKENDS)[number];
 export type Phase = (typeof PHASES)[number];
@@ -30,6 +32,8 @@ export type RunStatus = "ready" | "awaiting_input" | "awaiting_approval" | "comp
 export interface DevCrewConfig {
   version: 1;
   defaultBackend: "host-preferred" | BackendName;
+  executionMode: ExecutionMode;
+  verifyCommands: string[];
   workflow: {
     gates: GateName[];
     artifactDirectory: string;
@@ -66,12 +70,21 @@ export interface WorkflowAnswer {
   createdAt: string;
 }
 
+export interface VerificationResult {
+  command: string;
+  exitCode: number;
+  output: string;
+  startedAt: string;
+  completedAt: string;
+}
+
 export interface RunState {
   version: 1;
   runId: string;
   cwd: string;
   host: Host;
   mode: WorkflowMode;
+  executionMode: ExecutionMode;
   backend: BackendName;
   request: string;
   phase: Phase;
@@ -85,6 +98,8 @@ export interface RunState {
   approvals: WorkflowApproval[];
   feedback: WorkflowFeedback[];
   standards: StandardsDiscovery;
+  changedFiles: string[];
+  verification: VerificationResult[];
 }
 
 export interface StartWorkflowInput {
@@ -93,6 +108,7 @@ export interface StartWorkflowInput {
   mode: WorkflowMode;
   request: string;
   backend?: BackendName;
+  executionMode?: ExecutionMode;
 }
 
 export interface RunRef {

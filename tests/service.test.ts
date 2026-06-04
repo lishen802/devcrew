@@ -23,6 +23,16 @@ test("MCP tool registry exposes the planned DevCrew tools", () => {
   ]);
 });
 
+test("devcrew_start exposes explicit execution mode without making apply the default", () => {
+  const start = listDevCrewTools().find((tool) => tool.name === "devcrew_start");
+  assert.ok(start);
+  assert.deepEqual(start.inputSchema.properties.executionMode, {
+    type: "string",
+    enum: ["plan", "apply"],
+    description: "Execution mode. Defaults to plan; apply must be explicit.",
+  });
+});
+
 test("MCP tool calls create, inspect, approve, continue, and read artifacts", async () => {
   const cwd = await tempProject();
 

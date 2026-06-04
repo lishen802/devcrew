@@ -42,6 +42,11 @@ export function listDevCrewTools(): DevCrewTool[] {
           cwd: cwdProperty,
           host: { type: "string", enum: ["codex", "claude"] },
           mode: { type: "string", enum: ["feature", "greenfield"] },
+          executionMode: {
+            type: "string",
+            enum: ["plan", "apply"],
+            description: "Execution mode. Defaults to plan; apply must be explicit.",
+          },
           request: { type: "string" },
           backend: { type: "string", enum: ["codex", "claude", "local"] },
         },
@@ -126,7 +131,7 @@ function summarizeState(state: RunState): string {
   const role = state.roles.at(-1);
   const roleFallback =
     role?.usedFallback === true ? (role.backend === "local" ? "local" : "sdk") : role ? "none" : "none";
-  return `Run ${state.runId}: phase=${state.phase}, status=${state.status}, pending_gate=${pendingGate}, role_fallback=${roleFallback}`;
+  return `Run ${state.runId}: phase=${state.phase}, status=${state.status}, execution_mode=${state.executionMode}, pending_gate=${pendingGate}, role_fallback=${roleFallback}`;
 }
 
 function success(text: string, structuredContent?: Record<string, unknown>): ToolResult {

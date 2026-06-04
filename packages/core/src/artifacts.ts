@@ -40,9 +40,28 @@ function workflowContextBlock(state: RunState): string {
   return `## Workflow Context\n\n### Requester Answers\n\n${answerBlock(state)}\n\n### Rejection Feedback\n\n${feedbackBlock(state)}\n`;
 }
 
+function changedFilesBlock(state: RunState): string {
+  if (state.changedFiles.length === 0) {
+    return "No changed files were recorded.";
+  }
+  return state.changedFiles.map((file) => `- ${file}`).join("\n");
+}
+
+function verificationBlock(state: RunState): string {
+  if (state.verification.length === 0) {
+    return "No verification commands have been executed.";
+  }
+  return state.verification
+    .map(
+      (result) =>
+        `### ${result.command}\n\nExit Code: ${result.exitCode}\n\nOutput:\n\n\`\`\`text\n${result.output || "(no output)"}\n\`\`\``,
+    )
+    .join("\n\n");
+}
+
 export function renderArtifact(name: ArtifactName, state: RunState): string {
   const title = headingForArtifact(name);
-  const common = `# ${title}\n\nRun: ${state.runId}\nMode: ${state.mode}\nHost: ${state.host}\nBackend: ${state.backend}\nRequest: ${state.request}\n\n`;
+  const common = `# ${title}\n\nRun: ${state.runId}\nMode: ${state.mode}\nExecution Mode: ${state.executionMode}\nHost: ${state.host}\nBackend: ${state.backend}\nRequest: ${state.request}\n\n`;
 
   if (name === "requirements") {
     return `${common}## Product Boundary\n\n- Capture the requested outcome in user-facing terms.\n- Make explicit what is in scope and out of scope before implementation.\n- Treat the requester as the final approver for this stage.\n\n## Current Requester Answers\n\n${answerBlock(state)}\n\n## Discovered Standards\n\n${standardsExcerpt(state)}\n\n## Open Clarifications\n\n- Confirm primary users and success criteria.\n- Confirm scope boundaries and non-goals.\n- Confirm deployment or environment constraints.\n\n## Rejection Feedback\n\n${feedbackBlock(state)}\n`;
@@ -53,11 +72,11 @@ export function renderArtifact(name: ArtifactName, state: RunState): string {
   }
 
   if (name === "implementation-plan") {
-    return `${common}${workflowContextBlock(state)}\n## Implementation Tasks\n\n1. Update or create focused tests for the requested behavior.\n2. Implement the smallest code path that satisfies the approved architecture.\n3. Preserve discovered standards and existing repository conventions.\n4. Write or update user-facing docs for changed behavior.\n5. Run the project validation commands and capture evidence.\n\n## Code Review Criteria\n\n- Changes stay inside the approved scope.\n- Public interfaces match the architecture artifact.\n- Tests cover success, failure, and gate behavior where applicable.\n`;
+    return `${common}${workflowContextBlock(state)}\n## Implementation Tasks\n\n1. Update or create focused tests for the requested behavior.\n2. Implement the smallest code path that satisfies the approved architecture.\n3. Preserve discovered standards and existing repository conventions.\n4. Write or update user-facing docs for changed behavior.\n5. Run the project validation commands and capture evidence.\n\n## Changed Files\n\n${changedFilesBlock(state)}\n\n## Code Review Criteria\n\n- Changes stay inside the approved scope.\n- Public interfaces match the architecture artifact.\n- Tests cover success, failure, and gate behavior where applicable.\n`;
   }
 
   if (name === "test-report") {
-    return `${common}${workflowContextBlock(state)}\n## Test Report\n\n## Planned Verification\n\n- Run unit tests for changed modules.\n- Run integration or MCP contract checks when tool behavior changes.\n- Run build or typecheck before completion.\n\n## Acceptance Evidence\n\nRecord exact commands, exit codes, and important output here after execution.\n\n## Known Risks\n\n- Host SDK availability may vary by user environment.\n- Agent permissions are inherited from the host and must be reviewed there.\n`;
+    return `${common}${workflowContextBlock(state)}\n## Test Report\n\n## Planned Verification\n\n- Run unit tests for changed modules.\n- Run integration or MCP contract checks when tool behavior changes.\n- Run build or typecheck before completion.\n\n## Acceptance Evidence\n\n${verificationBlock(state)}\n\n## Known Risks\n\n- Host SDK availability may vary by user environment.\n- Agent permissions are inherited from the host and must be reviewed there.\n`;
   }
 
   return `${common}${workflowContextBlock(state)}\n## Acceptance Summary\n\nThe requester approved requirements, architecture, implementation planning, and test reporting gates for this run.\n\n## Approved Gates\n\n${Object.entries(state.gates)

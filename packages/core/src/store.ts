@@ -16,5 +16,11 @@ export async function saveState(state: RunState): Promise<RunState> {
 
 export async function loadState(cwd: string, runId: string): Promise<RunState> {
   const raw = await readFile(statePath(cwd, runId), "utf8");
-  return JSON.parse(raw) as RunState;
+  const parsed = JSON.parse(raw) as RunState;
+  return {
+    ...parsed,
+    executionMode: parsed.executionMode ?? "plan",
+    changedFiles: Array.isArray(parsed.changedFiles) ? parsed.changedFiles : [],
+    verification: Array.isArray(parsed.verification) ? parsed.verification : [],
+  };
 }

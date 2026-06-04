@@ -1,11 +1,13 @@
 import {
   ARTIFACTS,
   BACKENDS,
+  EXECUTION_MODES,
   GATES,
   HOSTS,
   WORKFLOW_MODES,
   type ArtifactName,
   type BackendName,
+  type ExecutionMode,
   type GateName,
   type Host,
   type WorkflowMode,
@@ -27,6 +29,10 @@ function oneOf<T extends readonly string[]>(value: unknown, field: string, value
 
 export function parseWorkflowMode(value: unknown): WorkflowMode {
   return oneOf(value, "mode", WORKFLOW_MODES);
+}
+
+export function parseExecutionMode(value: unknown): ExecutionMode {
+  return oneOf(value, "executionMode", EXECUTION_MODES);
 }
 
 export function parseHost(value: unknown): Host {

@@ -1,6 +1,8 @@
-import { mkdtemp, readFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { promisify } from "node:util";
 import test from "node:test";
 import assert from "node:assert/strict";
 
@@ -13,8 +15,19 @@ import {
 import type { RoleRunInput } from "../packages/adapters/src/index.js";
 import type { RoleResult } from "../packages/core/src/index.js";
 
+const execFileAsync = promisify(execFile);
+
 async function tempProject(): Promise<string> {
   return mkdtemp(join(tmpdir(), "devcrew-orchestrator-"));
+}
+
+async function initGitRepo(cwd: string): Promise<void> {
+  await execFileAsync("git", ["init"], { cwd });
+  await execFileAsync("git", ["config", "user.email", "devcrew@example.test"], { cwd });
+  await execFileAsync("git", ["config", "user.name", "DevCrew Test"], { cwd });
+  await writeFile(join(cwd, "README.md"), "# Test Project\n");
+  await execFileAsync("git", ["add", "README.md"], { cwd });
+  await execFileAsync("git", ["commit", "-m", "Initial commit"], { cwd });
 }
 
 test("startOrchestratedWorkflow runs the PM role before opening the requirements gate", async () => {
@@ -157,4 +170,85 @@ test("answerOrchestratedWorkflow re-runs the role and folds the answer into the 
   assert.match(requirements, /## Product Boundary/);
   assert.match(requirements, /Out of scope: SAML and social login providers/);
   assert.match(requirements, /List the out-of-scope items explicitly/);
+});
+
+test("apply mode records implementer changed files for gate review", async () => {
+  const cwd = await tempProject();
+  await initGitRepo(cwd);
+
+  const started = await startOrchestratedWorkflow({
+    cwd,
+    host: "codex",
+    mode: "feature",
+    request: "Add a generated module",
+    backend: "local",
+    executionMode: "apply",
+  });
+  await approveWorkflow({ cwd, runId: started.runId, gate: "requirements" });
+  await continueOrchestratedWorkflow({ cwd, runId: started.runId });
+  await approveWorkflow({ cwd, runId: started.runId, gate: "architecture" });
+
+  const runner = async (input: RoleRunInput): Promise<RoleResult> => {
+    if (input.role === "implementer") {
+      await writeFile(join(input.cwd, "generated.ts"), "export const generated = true;\n");
+    }
+    return {
+      role: input.role,
+      backend: input.backend,
+      summary: `${input.role} completed`,
+      markdown: `# ${input.role}\n\nDone.\n`,
+      usedFallback: false,
+    };
+  };
+
+  const implemented = await continueOrchestratedWorkflow({ cwd, runId: started.runId }, runner);
+
+  assert.deepEqual(implemented.changedFiles, ["?? generated.ts"]);
+  const implementationPath = implemented.artifacts["implementation-plan"];
+  assert.ok(implementationPath);
+  const implementation = await readFile(implementationPath, "utf8");
+  assert.match(implementation, /Changed Files/);
+  assert.match(implementation, /\?\? generated\.ts/);
+});
+
+test("apply mode tester runs configured verification commands and writes acceptance evidence", async () => {
+  const cwd = await tempProject();
+  await mkdir(join(cwd, ".devcrew"), { recursive: true });
+  const command = `${process.execPath} -e "console.log('devcrew-verify-ok')"`;
+  await writeFile(
+    join(cwd, ".devcrew", "config.json"),
+    `${JSON.stringify({
+      version: 1,
+      defaultBackend: "local",
+      executionMode: "apply",
+      workflow: {
+        gates: ["requirements", "architecture", "implementation", "testing"],
+        artifactDirectory: "docs/devcrew",
+      },
+      verifyCommands: [command],
+    }, null, 2)}\n`,
+  );
+
+  const started = await startOrchestratedWorkflow({
+    cwd,
+    host: "codex",
+    mode: "feature",
+    request: "Add verification evidence",
+  });
+  await approveWorkflow({ cwd, runId: started.runId, gate: "requirements" });
+  await continueOrchestratedWorkflow({ cwd, runId: started.runId });
+  await approveWorkflow({ cwd, runId: started.runId, gate: "architecture" });
+  await continueOrchestratedWorkflow({ cwd, runId: started.runId });
+  await approveWorkflow({ cwd, runId: started.runId, gate: "implementation" });
+
+  const tested = await continueOrchestratedWorkflow({ cwd, runId: started.runId });
+
+  assert.equal(tested.verification?.at(-1)?.exitCode, 0);
+  assert.match(tested.verification?.at(-1)?.output ?? "", /devcrew-verify-ok/);
+  const testReportPath = tested.artifacts["test-report"];
+  assert.ok(testReportPath);
+  const testReport = await readFile(testReportPath, "utf8");
+  assert.match(testReport, /Acceptance Evidence/);
+  assert.match(testReport, /devcrew-verify-ok/);
+  assert.match(testReport, /Exit Code: 0/);
 });

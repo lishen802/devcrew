@@ -9,6 +9,7 @@ import {
   parseArtifactName,
   parseBackend,
   parseCwd,
+  parseExecutionMode,
   parseFeedback,
   parseGate,
   parseHost,
@@ -92,6 +93,7 @@ export async function startWorkflow(input: StartWorkflowInput, options: Workflow
   const request = parseRequest(input.request);
   const config = await ensureConfig(cwd);
   const backend = input.backend ? parseBackend(input.backend) : config.defaultBackend === "host-preferred" ? host : config.defaultBackend;
+  const executionMode = input.executionMode ? parseExecutionMode(input.executionMode) : config.executionMode;
   const createdAt = now();
   const state: RunState = {
     version: 1,
@@ -99,6 +101,7 @@ export async function startWorkflow(input: StartWorkflowInput, options: Workflow
     cwd,
     host,
     mode,
+    executionMode,
     backend,
     request,
     phase: "requirements",
@@ -117,6 +120,8 @@ export async function startWorkflow(input: StartWorkflowInput, options: Workflow
     approvals: [],
     feedback: [],
     standards: await discoverStandards(cwd),
+    changedFiles: [],
+    verification: [],
   };
 
   if (!options.skipArtifactWrite) {

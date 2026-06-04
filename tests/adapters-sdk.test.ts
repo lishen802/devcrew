@@ -40,6 +40,38 @@ test("buildCodexThreadOptions can request a writable sandbox for apply mode", ()
   assert.equal(options.sandboxMode, "workspace-write");
 });
 
+test("runRole gives implementer a writable Codex sandbox only in apply mode", async () => {
+  let receivedOptions: CodexThreadOptions | undefined;
+  let receivedPrompt = "";
+
+  const loadModule: ModuleLoader = async () => ({
+    Codex: class {
+      startThread(options?: CodexThreadOptions) {
+        receivedOptions = options;
+        return {
+          run: async (prompt: string) => {
+            receivedPrompt = prompt;
+            return { finalResponse: "# Implementation\n\nChanged files.", items: [], usage: null };
+          },
+        };
+      }
+    },
+  });
+
+  const result = await runRole({
+    ...baseInput,
+    backend: "codex",
+    role: "implementer",
+    phase: "implementation",
+    executionMode: "apply",
+  }, { loadModule });
+
+  assert.equal(result.usedFallback, false);
+  assert.equal(receivedOptions?.sandboxMode, "workspace-write");
+  assert.doesNotMatch(receivedPrompt, /Do not modify repository files/);
+  assert.match(receivedPrompt, /You may modify repository files/);
+});
+
 test("extractCodexText returns the trimmed finalResponse", () => {
   assert.equal(extractCodexText({ finalResponse: "  # Architecture\n" }), "# Architecture");
 });
@@ -55,6 +87,35 @@ test("buildClaudeOptions pins the read-only planning contract", () => {
     permissionMode: "plan",
     allowedTools: ["Read", "Grep", "Glob"],
   });
+});
+
+test("runRole gives tester Bash access through Claude only in apply mode", async () => {
+  let receivedOptions: ClaudeQueryOptions | undefined;
+  let receivedPrompt = "";
+
+  const loadModule: ModuleLoader = async () => ({
+    query: ({ prompt, options }: { prompt: string; options?: ClaudeQueryOptions }): AsyncIterable<ClaudeMessage> => {
+      receivedPrompt = prompt;
+      receivedOptions = options;
+      async function* stream(): AsyncGenerator<ClaudeMessage> {
+        yield { type: "result", subtype: "success", result: "# Test Report\n\nExecuted tests.", is_error: false };
+      }
+      return stream();
+    },
+  });
+
+  const result = await runRole({
+    ...baseInput,
+    backend: "claude",
+    role: "tester",
+    phase: "testing",
+    executionMode: "apply",
+  }, { loadModule });
+
+  assert.equal(result.usedFallback, false);
+  assert.equal(receivedOptions?.permissionMode, "acceptEdits");
+  assert.deepEqual(receivedOptions?.allowedTools, ["Read", "Grep", "Glob", "Bash"]);
+  assert.match(receivedPrompt, /run validation commands/i);
 });
 
 test("extractClaudeResult returns the result on a successful turn", () => {

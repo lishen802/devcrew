@@ -6,6 +6,8 @@ import type { DevCrewConfig } from "./types.js";
 export const DEFAULT_CONFIG: DevCrewConfig = {
   version: 1,
   defaultBackend: "host-preferred",
+  executionMode: "plan",
+  verifyCommands: [],
   workflow: {
     gates: ["requirements", "architecture", "implementation", "testing"],
     artifactDirectory: "docs/devcrew",
@@ -37,5 +39,14 @@ export async function readConfig(cwd: string): Promise<DevCrewConfig> {
   if (parsed.version !== 1) {
     throw new Error("Unsupported .devcrew/config.json version");
   }
-  return parsed;
+  return {
+    ...DEFAULT_CONFIG,
+    ...parsed,
+    executionMode: parsed.executionMode ?? "plan",
+    verifyCommands: Array.isArray(parsed.verifyCommands) ? parsed.verifyCommands : [],
+    workflow: {
+      ...DEFAULT_CONFIG.workflow,
+      ...parsed.workflow,
+    },
+  };
 }

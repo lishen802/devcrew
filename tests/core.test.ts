@@ -35,6 +35,7 @@ test("startWorkflow creates a persisted run with a requirements approval gate", 
   assert.equal(state.phase, "requirements");
   assert.equal(state.status, "awaiting_approval");
   assert.equal(state.backend, "codex");
+  assert.equal(state.executionMode, "plan");
   assert.equal(state.gates.requirements, "pending");
   assert.match(state.runId, /^dc-/);
   assert.ok(state.artifacts.requirements?.endsWith("requirements.md"));
@@ -42,6 +43,23 @@ test("startWorkflow creates a persisted run with a requirements approval gate", 
   const artifact = await getArtifact({ cwd, runId: state.runId, name: "requirements" });
   assert.match(artifact.content, /Add audit logging/);
   assert.match(artifact.content, /Use Node 20/);
+});
+
+test("startWorkflow persists explicit apply execution mode", async () => {
+  const cwd = await tempProject();
+
+  const state = await startWorkflow({
+    cwd,
+    host: "codex",
+    mode: "feature",
+    request: "Implement audit logging",
+    executionMode: "apply",
+  });
+
+  assert.equal(state.executionMode, "apply");
+
+  const loaded = await loadState(cwd, state.runId);
+  assert.equal(loaded.executionMode, "apply");
 });
 
 test("approveWorkflow and continueWorkflow advance through gated stages idempotently", async () => {

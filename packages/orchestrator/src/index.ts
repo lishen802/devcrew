@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
@@ -10,6 +11,7 @@ import {
   ARTIFACTS,
   gateForPhase,
   getWorkflowStatus,
+  readConfig,
   renderArtifact,
   saveState,
   startWorkflow,
@@ -20,6 +22,7 @@ import {
   type RunRef,
   type RunState,
   type StartWorkflowInput,
+  type VerificationResult,
 } from "../../core/src/index.js";
 
 type RoleRunner = (input: RoleRunInput) => Promise<RoleResult>;
@@ -50,6 +53,10 @@ async function writeMarkdownArtifact(state: RunState, artifact: ArtifactName, ma
   return path;
 }
 
+function now(): string {
+  return new Date().toISOString();
+}
+
 function fallbackNotice(result: RoleResult): string {
   if (!result.usedFallback) {
     return "";
@@ -72,6 +79,104 @@ async function readPriorArtifacts(state: RunState): Promise<Record<string, strin
   return priorArtifacts;
 }
 
+async function runShellCommand(command: string, cwd: string): Promise<VerificationResult> {
+  const startedAt = now();
+  return new Promise((resolve) => {
+    const child = spawn(command, {
+      cwd,
+      shell: true,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    const chunks: Buffer[] = [];
+    const maxOutputBytes = 64_000;
+    let collected = 0;
+
+    function collect(chunk: Buffer): void {
+      if (collected >= maxOutputBytes) {
+        return;
+      }
+      const slice = chunk.subarray(0, Math.max(0, maxOutputBytes - collected));
+      chunks.push(slice);
+      collected += slice.length;
+    }
+
+    child.stdout.on("data", collect);
+    child.stderr.on("data", collect);
+    child.on("error", (error) => {
+      resolve({
+        command,
+        exitCode: 1,
+        output: error.message,
+        startedAt,
+        completedAt: now(),
+      });
+    });
+    child.on("close", (code) => {
+      resolve({
+        command,
+        exitCode: code ?? 1,
+        output: Buffer.concat(chunks).toString("utf8").trim(),
+        startedAt,
+        completedAt: now(),
+      });
+    });
+  });
+}
+
+async function collectChangedFiles(cwd: string): Promise<string[]> {
+  const result = await runShellCommand("git status --porcelain -uall", cwd);
+  if (result.exitCode !== 0) {
+    return [];
+  }
+  return result.output
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .filter(Boolean)
+    .filter((line) => {
+      const path = line.slice(3);
+      return !path.startsWith(".devcrew/") && !path.startsWith("docs/devcrew/");
+    });
+}
+
+async function runConfiguredVerification(state: RunState): Promise<VerificationResult[]> {
+  const config = await readConfig(state.cwd);
+  const commands = config.verifyCommands.filter((command) => command.trim().length > 0);
+  const results: VerificationResult[] = [];
+  for (const command of commands) {
+    results.push(await runShellCommand(command, state.cwd));
+  }
+  return results;
+}
+
+function changedFilesBlock(changedFiles: string[]): string {
+  if (changedFiles.length === 0) {
+    return "No changed files were detected.";
+  }
+  return changedFiles.map((file) => `- ${file}`).join("\n");
+}
+
+function verificationBlock(results: VerificationResult[]): string {
+  if (results.length === 0) {
+    return "No verification commands were configured.";
+  }
+  return results
+    .map(
+      (result) =>
+        `### ${result.command}\n\nExit Code: ${result.exitCode}\n\nOutput:\n\n\`\`\`text\n${result.output || "(no output)"}\n\`\`\``,
+    )
+    .join("\n\n");
+}
+
+function appendExecutionSections(artifact: ArtifactName, markdown: string, state: RunState): string {
+  if (artifact === "implementation-plan" && !markdown.includes("## Changed Files")) {
+    return `${markdown.trim()}\n\n## Changed Files\n\n${changedFilesBlock(state.changedFiles)}\n`;
+  }
+  if (artifact === "test-report" && !markdown.includes("## Acceptance Evidence")) {
+    return `${markdown.trim()}\n\n## Acceptance Evidence\n\n${verificationBlock(state.verification)}\n`;
+  }
+  return markdown;
+}
+
 async function runCurrentPhaseRole(state: RunState, runner: RoleRunner = runRole): Promise<RunState> {
   const gate = gateForPhase(state.phase);
   const role = roleForPhase(state.phase);
@@ -92,6 +197,7 @@ async function runCurrentPhaseRole(state: RunState, runner: RoleRunner = runRole
     phase: state.phase,
     request: state.request,
     mode: state.mode,
+    executionMode: state.executionMode,
     cwd: state.cwd,
     standards: state.standards.combined,
     artifactPath: path,
@@ -100,9 +206,17 @@ async function runCurrentPhaseRole(state: RunState, runner: RoleRunner = runRole
     priorArtifacts: await readPriorArtifacts(state),
   });
 
+  if (state.executionMode === "apply" && state.phase === "implementation") {
+    state.changedFiles = await collectChangedFiles(state.cwd);
+  }
+  if (state.executionMode === "apply" && state.phase === "testing") {
+    state.verification = await runConfiguredVerification(state);
+  }
+
   // When the backend cannot run a real SDK we keep a single deterministic
   // artifact source by rendering the rich phase template from the core layer.
-  const markdown = result.usedFallback ? `${fallbackNotice(result)}${renderArtifact(artifact, state)}` : result.markdown;
+  const baseMarkdown = result.usedFallback ? `${fallbackNotice(result)}${renderArtifact(artifact, state)}` : result.markdown;
+  const markdown = appendExecutionSections(artifact, baseMarkdown, state);
   state.roles.push({ ...result, markdown });
   state.artifacts[artifact] = await writeMarkdownArtifact(state, artifact, markdown);
   state.gates[gate] = "pending";

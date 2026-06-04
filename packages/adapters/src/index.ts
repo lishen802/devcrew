@@ -1,4 +1,4 @@
-import type { BackendName, Host, Phase, RoleResult, WorkflowMode } from "../../core/src/index.js";
+import type { BackendName, ExecutionMode, Host, Phase, RoleResult, WorkflowMode } from "../../core/src/index.js";
 
 export interface BackendResolutionInput {
   host: Host;
@@ -11,6 +11,7 @@ export interface RoleRunInput {
   phase: Phase;
   request: string;
   mode: WorkflowMode;
+  executionMode?: ExecutionMode;
   cwd: string;
   standards: string;
   artifactPath: string;
@@ -27,6 +28,7 @@ export function resolveBackendName(input: BackendResolutionInput): BackendName {
 }
 
 export function renderRolePrompt(input: Omit<RoleRunInput, "backend" | "cwd">): string {
+  const executionMode = input.executionMode ?? "plan";
   const answers = input.answers ?? [];
   const feedback = input.feedback ?? [];
   const priorArtifacts = input.priorArtifacts ?? {};
@@ -34,6 +36,7 @@ export function renderRolePrompt(input: Omit<RoleRunInput, "backend" | "cwd">): 
     `Role: ${input.role}`,
     `Phase: ${input.phase}`,
     `Mode: ${input.mode}`,
+    `Execution Mode: ${executionMode}`,
     `Request: ${input.request}`,
     `Artifact Path: ${input.artifactPath}`,
     "",
@@ -57,12 +60,19 @@ export function renderRolePrompt(input: Omit<RoleRunInput, "backend" | "cwd">): 
     }
   }
 
+  const canApply = executionMode === "apply" && (input.role === "implementer" || input.role === "tester");
+  const permissionInstruction = canApply
+    ? input.role === "tester"
+      ? "You may run validation commands needed for the approved scope and report exact evidence."
+      : "You may modify repository files needed for the approved scope and report changed files."
+    : "Do not modify repository files. Return only the Markdown document content for the artifact.";
+
   lines.push(
     "",
     "Instructions:",
     `Act as the DevCrew ${input.role} role and produce a complete, well-structured Markdown document for the ${input.phase} phase.`,
     "Keep scope aligned with the approved gates and inherited host permissions.",
-    "Do not modify repository files. Return only the Markdown document content for the artifact.",
+    permissionInstruction,
   );
 
   return lines.join("\n");
@@ -170,9 +180,13 @@ export function extractCodexText(turn: CodexTurn | undefined): string {
   return text;
 }
 
-export function buildClaudeOptions(cwd: string): ClaudeQueryOptions {
+export function buildClaudeOptions(
+  cwd: string,
+  permissionMode: ClaudePermissionMode = "plan",
+  allowedTools: string[] = ["Read", "Grep", "Glob"],
+): ClaudeQueryOptions {
   // Read-only planning mode keeps roles from modifying the repository.
-  return { cwd, permissionMode: "plan", allowedTools: ["Read", "Grep", "Glob"] };
+  return { cwd, permissionMode, allowedTools };
 }
 
 export function extractClaudeResult(message: ClaudeResultMessage | undefined): string {
@@ -189,20 +203,37 @@ export function extractClaudeResult(message: ClaudeResultMessage | undefined): s
   return text;
 }
 
-async function runWithCodex(prompt: string, cwd: string, loadModule: ModuleLoader): Promise<string> {
+function roleCanApply(input: RoleRunInput): boolean {
+  return input.executionMode === "apply" && (input.role === "implementer" || input.role === "tester");
+}
+
+function codexSandboxForRole(input: RoleRunInput): CodexSandboxMode {
+  return roleCanApply(input) ? "workspace-write" : "read-only";
+}
+
+function claudeOptionsForRole(input: RoleRunInput): ClaudeQueryOptions {
+  if (!roleCanApply(input)) {
+    return buildClaudeOptions(input.cwd);
+  }
+  const allowedTools =
+    input.role === "implementer" ? ["Read", "Grep", "Glob", "Edit", "Write", "Bash"] : ["Read", "Grep", "Glob", "Bash"];
+  return buildClaudeOptions(input.cwd, "acceptEdits", allowedTools);
+}
+
+async function runWithCodex(input: RoleRunInput, prompt: string, loadModule: ModuleLoader): Promise<string> {
   const mod = await loadModule("@openai/codex-sdk");
   const CodexClass = mod.Codex as CodexConstructor;
   const codex = new CodexClass();
-  const thread = codex.startThread(buildCodexThreadOptions(cwd));
+  const thread = codex.startThread(buildCodexThreadOptions(input.cwd, codexSandboxForRole(input)));
   const turn = await thread.run(prompt);
   return extractCodexText(turn);
 }
 
-async function runWithClaude(prompt: string, cwd: string, loadModule: ModuleLoader): Promise<string> {
+async function runWithClaude(input: RoleRunInput, prompt: string, loadModule: ModuleLoader): Promise<string> {
   const mod = await loadModule("@anthropic-ai/claude-agent-sdk");
   const query = mod.query as ClaudeQueryFn;
   let resultMessage: ClaudeResultMessage | undefined;
-  for await (const message of query({ prompt, options: buildClaudeOptions(cwd) })) {
+  for await (const message of query({ prompt, options: claudeOptionsForRole(input) })) {
     if (message?.type === "result") {
       resultMessage = message as ClaudeResultMessage;
     }
@@ -246,8 +277,8 @@ export async function runRole(input: RoleRunInput, deps: RunRoleDeps = {}): Prom
   try {
     const markdown =
       input.backend === "codex"
-        ? await runWithCodex(prompt, input.cwd, loadModule)
-        : await runWithClaude(prompt, input.cwd, loadModule);
+        ? await runWithCodex(input, prompt, loadModule)
+        : await runWithClaude(input, prompt, loadModule);
     return {
       role: input.role,
       backend: input.backend,

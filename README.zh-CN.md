@@ -13,6 +13,7 @@ DevCrew 是一个面向 Codex、Claude Code 等编程 Agent 的本地工作流�
 - 内置阶段门禁：需求确认、架构确认、实现计划确认、测试报告确认。
 - 支持两种工作流：`feature` 用于已有项目功能开发，`greenfield` 用于从零开始的新产品。
 - 默认按当前宿主选择后端：在 Codex 中优先使用 Codex，在 Claude Code 中优先使用 Claude。
+- 已接入角色编排：`devcrew_start` 会先运行 PM 角色，`devcrew_continue` 会运行下一阶段角色，然后再打开阶段门禁。
 - 运行状态写入 `.devcrew/runs/<run-id>/state.json`，评审产物写入 `docs/devcrew/<run-id>/`。
 - 自动发现项目规范：`.devcrew/standards.md`、`AGENTS.md`、`CLAUDE.md`、README 以及常见项目配置文件。
 - 提供 MCP 工具：`devcrew_start`、`devcrew_status`、`devcrew_answer`、`devcrew_approve`、`devcrew_reject`、`devcrew_continue`、`devcrew_artifact`。
@@ -76,9 +77,9 @@ devcrew serve --stdio
 典型流程：
 
 1. Agent 调用 `devcrew_start` 创建工作流。
-2. DevCrew 生成需求文档并等待你确认。
+2. DevCrew 运行 PM 角色生成需求文档并等待你确认。
 3. 你通过 `devcrew_approve` 或 `devcrew_reject` 推进或驳回阶段。
-4. 需求确认后进入架构设计，再进入实现计划和测试验收。
+4. 需求确认后，`devcrew_continue` 会运行架构师角色，再依次进入实现计划和测试验收。
 5. 所有产物都会保存在 `docs/devcrew/<run-id>/`，方便审查和版本管理。
 
 ## 开发命令

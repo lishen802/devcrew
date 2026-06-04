@@ -13,6 +13,7 @@ The first release is intentionally local-first. DevCrew stores workflow state an
 - Gated phases for requirements, architecture, implementation planning, and test reporting.
 - Two workflow modes: `feature` for existing repositories and `greenfield` for new products.
 - Host-preferred backend selection: Codex runs default to Codex, Claude Code runs default to Claude.
+- Orchestrated role execution: `devcrew_start` runs the PM role, and `devcrew_continue` runs the next phase role before opening the gate.
 - Repository artifacts in `.devcrew/runs/<run-id>/state.json` and `docs/devcrew/<run-id>/`.
 - Standards discovery from `.devcrew/standards.md`, `AGENTS.md`, `CLAUDE.md`, README, and common project manifests.
 - MCP tools: `devcrew_start`, `devcrew_status`, `devcrew_answer`, `devcrew_approve`, `devcrew_reject`, `devcrew_continue`, and `devcrew_artifact`.
@@ -65,7 +66,7 @@ In Codex or Claude Code, invoke the generated DevCrew skill and ask for a workfl
 Use DevCrew to plan and implement audit logging for the billing API.
 ```
 
-The agent should call `devcrew_start`, show the requirements artifact, then wait for approval before moving to architecture.
+The agent should call `devcrew_start`, show the PM-generated requirements artifact, then wait for approval before moving to architecture. After each approval, `devcrew_continue` runs the next role and writes its Markdown artifact before opening the next gate.
 
 ## Development
 

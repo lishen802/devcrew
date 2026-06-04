@@ -1,6 +1,11 @@
 # Workflow Model
 
-DevCrew uses a gated state machine.
+DevCrew uses a gated state machine plus an orchestrator layer.
+
+The core state machine persists run state and gate transitions. The orchestrator
+executes the role for the current phase, writes that role's Markdown artifact,
+records the role result in state, and then opens the phase gate for requester
+approval.
 
 ## Modes
 
@@ -14,6 +19,10 @@ DevCrew uses a gated state machine.
 3. `implementation`: implementer creates the implementation plan and coding checklist.
 4. `testing`: tester records validation strategy and acceptance evidence.
 5. `acceptance`: generated after the testing gate is approved.
+
+`devcrew_start` runs the PM role for `requirements`. After the requester approves
+a gate, `devcrew_continue` runs the role for the next phase before setting that
+phase's gate to `pending`.
 
 ## Gates
 

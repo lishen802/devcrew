@@ -35,6 +35,8 @@ test("MCP tool calls create, inspect, approve, continue, and read artifacts", as
   assert.equal(start.isError, false);
   assert.match(start.content[0].text, /requirements/);
   const runId = (start.structuredContent?.state as { runId: string }).runId;
+  const startState = start.structuredContent?.state as { roles: Array<{ role: string }> };
+  assert.equal(startState.roles.at(-1)?.role, "pm");
 
   const status = await callDevCrewTool("devcrew_status", { cwd, runId });
   assert.match(status.content[0].text, /awaiting_approval/);
@@ -55,6 +57,7 @@ test("MCP tool calls create, inspect, approve, continue, and read artifacts", as
     runId,
     name: "architecture",
   });
+  assert.match(artifact.content[0].text, /architect prepared deterministic Architecture fallback/);
   assert.match(artifact.content[0].text, /Architecture/);
 });
 

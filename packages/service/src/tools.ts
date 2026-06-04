@@ -1,13 +1,12 @@
 import {
   answerWorkflow,
   approveWorkflow,
-  continueWorkflow,
   getArtifact,
   getWorkflowStatus,
   rejectWorkflow,
-  startWorkflow,
   type RunState,
 } from "../../core/src/index.js";
+import { continueOrchestratedWorkflow, startOrchestratedWorkflow } from "../../orchestrator/src/index.js";
 
 export interface DevCrewTool {
   name: string;
@@ -144,7 +143,7 @@ function failure(error: unknown): ToolResult {
 export async function callDevCrewTool(name: string, args: Record<string, unknown>): Promise<ToolResult> {
   try {
     if (name === "devcrew_start") {
-      const state = await startWorkflow(args as never);
+      const state = await startOrchestratedWorkflow(args as never);
       return success(`${summarizeState(state)}. Review ${state.artifacts.requirements}`, { state });
     }
     if (name === "devcrew_status") {
@@ -164,7 +163,7 @@ export async function callDevCrewTool(name: string, args: Record<string, unknown
       return success(`${summarizeState(state)}. Gate rejected.`, { state });
     }
     if (name === "devcrew_continue") {
-      const state = await continueWorkflow(args as never);
+      const state = await continueOrchestratedWorkflow(args as never);
       return success(`${summarizeState(state)}.`, { state });
     }
     if (name === "devcrew_artifact") {

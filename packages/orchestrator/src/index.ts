@@ -9,6 +9,7 @@ import {
   artifactForPhase,
   artifactPath,
   ARTIFACTS,
+  discoverVerifyCommands,
   gateForPhase,
   getWorkflowStatus,
   readConfig,
@@ -231,7 +232,8 @@ export async function revertChangedFiles(
 
 async function runConfiguredVerification(state: RunState): Promise<VerificationResult[]> {
   const config = await readConfig(state.cwd);
-  const commands = config.verifyCommands.filter((command) => command.trim().length > 0);
+  const configuredCommands = config.verifyCommands.filter((command) => command.trim().length > 0);
+  const commands = configuredCommands.length > 0 ? configuredCommands : await discoverVerifyCommands(state.cwd);
   const results: VerificationResult[] = [];
   for (const command of commands) {
     results.push(await runShellCommand(command, state.cwd));

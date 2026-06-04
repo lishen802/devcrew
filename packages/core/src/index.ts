@@ -6,4 +6,5 @@ export * from "./store.js";
 export * from "./types.js";
 export * from "./validation.js";
 export * from "./version.js";
+export * from "./verification.js";
 export * from "./workflow.js";

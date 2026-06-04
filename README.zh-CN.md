@@ -89,7 +89,9 @@ devcrew serve --stdio
 使用 DevCrew apply 模式帮我实现 billing API 的审计日志功能。
 ```
 
-验证命令可以写在 `.devcrew/config.json`：
+DevCrew 会自动从常见项目清单中发现验证命令。当前规则会优先读取 `package.json` scripts（`validate`，然后是 `test`，再到 `typecheck`/`lint`），再按项目清单回退到 `go test ./...`、`cargo test` 或 `python -m pytest`。
+
+你也可以在 `.devcrew/config.json` 中显式覆盖：
 
 ```json
 {

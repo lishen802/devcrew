@@ -75,7 +75,9 @@ By default DevCrew runs in `plan` mode. To allow the implementer/tester phases t
 Use DevCrew in apply mode to implement audit logging for the billing API.
 ```
 
-Configure verification commands in `.devcrew/config.json`:
+DevCrew auto-discovers verification commands from common project manifests. The current rules prefer `package.json` scripts (`validate`, then `test`, then `typecheck`/`lint`), then fall back to `go test ./...`, `cargo test`, or `python -m pytest` when matching manifests are present.
+
+You can override discovery with explicit commands in `.devcrew/config.json`:
 
 ```json
 {

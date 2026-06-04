@@ -8,6 +8,7 @@ import {
   answerWorkflow,
   approveWorkflow,
   continueWorkflow,
+  discoverVerifyCommands,
   discoverStandards,
   DEVCREW_VERSION,
   getArtifact,
@@ -191,4 +192,30 @@ test("discoverStandards prefers explicit DevCrew standards and includes project 
   assert.match(standards.combined, /Follow repo agent rules/);
   assert.match(standards.combined, /package.json scripts: test/);
   assert.ok(standards.sources.some((source) => source.endsWith(".devcrew/standards.md")));
+});
+
+test("discoverVerifyCommands prefers configured package validation scripts", async () => {
+  const cwd = await tempProject();
+  await writeFile(
+    join(cwd, "package.json"),
+    JSON.stringify({
+      scripts: {
+        lint: "eslint .",
+        test: "node --test",
+        validate: "npm run lint && npm test",
+      },
+    }),
+  );
+
+  assert.deepEqual(await discoverVerifyCommands(cwd), ["npm run validate"]);
+});
+
+test("discoverVerifyCommands falls back to common project manifests", async () => {
+  const goProject = await tempProject();
+  await writeFile(join(goProject, "go.mod"), "module example.com/demo\n");
+  assert.deepEqual(await discoverVerifyCommands(goProject), ["go test ./..."]);
+
+  const cargoProject = await tempProject();
+  await writeFile(join(cargoProject, "Cargo.toml"), "[package]\nname = \"demo\"\nversion = \"0.1.0\"\n");
+  assert.deepEqual(await discoverVerifyCommands(cargoProject), ["cargo test"]);
 });

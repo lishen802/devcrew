@@ -257,6 +257,50 @@ test("apply mode tester runs configured verification commands and writes accepta
   assert.match(testReport, /Exit Code: 0/);
 });
 
+test("apply mode tester discovers package verification commands when none are configured", async () => {
+  const cwd = await tempProject();
+  await mkdir(join(cwd, ".devcrew"), { recursive: true });
+  await writeFile(
+    join(cwd, ".devcrew", "config.json"),
+    `${JSON.stringify({
+      version: 1,
+      defaultBackend: "local",
+      executionMode: "apply",
+      verifyCommands: [],
+      workflow: {
+        gates: ["requirements", "architecture", "implementation", "testing"],
+        artifactDirectory: "docs/devcrew",
+      },
+    }, null, 2)}\n`,
+  );
+  await writeFile(
+    join(cwd, "package.json"),
+    JSON.stringify({
+      scripts: {
+        test: `${process.execPath} -e "console.log('auto-npm-test-ok')"`,
+      },
+    }),
+  );
+
+  const started = await startOrchestratedWorkflow({
+    cwd,
+    host: "codex",
+    mode: "feature",
+    request: "Discover verification commands",
+  });
+  await approveWorkflow({ cwd, runId: started.runId, gate: "requirements" });
+  await continueOrchestratedWorkflow({ cwd, runId: started.runId });
+  await approveWorkflow({ cwd, runId: started.runId, gate: "architecture" });
+  await continueOrchestratedWorkflow({ cwd, runId: started.runId });
+  await approveWorkflow({ cwd, runId: started.runId, gate: "implementation" });
+
+  const tested = await continueOrchestratedWorkflow({ cwd, runId: started.runId });
+
+  assert.equal(tested.verification?.at(-1)?.command, "npm test");
+  assert.equal(tested.verification?.at(-1)?.exitCode, 0);
+  assert.match(tested.verification?.at(-1)?.output ?? "", /auto-npm-test-ok/);
+});
+
 test("changedSinceBaseline excludes pre-existing uncommitted edits", () => {
   const baseline = [" M existing.ts"];
   const current = [" M existing.ts", "?? generated.ts", " M src/app.ts"];

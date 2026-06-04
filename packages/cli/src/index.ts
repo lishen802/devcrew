@@ -2,6 +2,7 @@
 import { access, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
+import { DEVCREW_VERSION } from "../../core/src/index.js";
 import { initProject } from "../../plugins/src/index.js";
 import { runStdioServer } from "../../service/src/index.js";
 
@@ -15,7 +16,7 @@ async function exists(path: string): Promise<boolean> {
 }
 
 function usage(): string {
-  return `DevCrew 0.1.0\n\nUsage:\n  devcrew init [cwd]\n  devcrew serve --stdio\n  devcrew doctor [cwd]\n  devcrew validate [cwd]\n`;
+  return `DevCrew ${DEVCREW_VERSION}\n\nUsage:\n  devcrew init [cwd]\n  devcrew serve --stdio\n  devcrew doctor [cwd]\n  devcrew validate [cwd]\n`;
 }
 
 async function doctor(cwd: string): Promise<void> {
@@ -57,7 +58,7 @@ async function main(argv: string[]): Promise<void> {
 
   if (command === "serve") {
     if (!argv.includes("--stdio") && rest.length > 0) {
-      throw new Error("Only stdio transport is supported in v0.1.0");
+      throw new Error(`Only stdio transport is supported in v${DEVCREW_VERSION}`);
     }
     runStdioServer();
     return;

@@ -3,7 +3,7 @@ import { access, copyFile, mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { DEFAULT_CONFIG } from "../../core/src/index.js";
+import { DEFAULT_CONFIG, DEVCREW_VERSION } from "../../core/src/index.js";
 
 export interface GeneratedPlugin {
   name: "devcrew";
@@ -88,7 +88,7 @@ export async function generateCodexPlugin(root: string): Promise<GeneratedPlugin
   await writeCodexAssets(pluginRoot);
   await writeJson(join(pluginRoot, ".codex-plugin", "plugin.json"), {
     name: "devcrew",
-    version: "0.1.0",
+    version: DEVCREW_VERSION,
     description: "DevCrew gated multi-role workflow service for Codex.",
     author: {
       name: "DevCrew Contributors",
@@ -165,7 +165,7 @@ export async function generateClaudePlugin(root: string): Promise<GeneratedPlugi
   await writeJson(join(pluginRoot, ".claude-plugin", "plugin.json"), {
     name: "devcrew",
     description: "DevCrew gated multi-role workflow service for Claude Code.",
-    version: "0.1.0",
+    version: DEVCREW_VERSION,
     author: { name: "DevCrew Contributors" },
   });
   await writeFile(join(pluginRoot, "skills", "devcrew", "SKILL.md"), entrySkill(), "utf8");

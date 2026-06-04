@@ -31,9 +31,11 @@ test("MCP tool calls create, inspect, approve, continue, and read artifacts", as
     host: "codex",
     mode: "feature",
     request: "Add project-level release notes",
+    backend: "local",
   });
   assert.equal(start.isError, false);
   assert.match(start.content[0].text, /requirements/);
+  assert.match(start.content[0].text, /role_fallback=local/);
   const runId = (start.structuredContent?.state as { runId: string }).runId;
   const startState = start.structuredContent?.state as { roles: Array<{ role: string }> };
   assert.equal(startState.roles.at(-1)?.role, "pm");
@@ -51,6 +53,7 @@ test("MCP tool calls create, inspect, approve, continue, and read artifacts", as
 
   const continued = await callDevCrewTool("devcrew_continue", { cwd, runId });
   assert.match(continued.content[0].text, /architecture/);
+  assert.match(continued.content[0].text, /role_fallback=local/);
 
   const artifact = await callDevCrewTool("devcrew_artifact", {
     cwd,

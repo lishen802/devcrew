@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -9,8 +9,11 @@ import {
   approveWorkflow,
   continueWorkflow,
   discoverStandards,
+  DEVCREW_VERSION,
   getArtifact,
+  loadState,
   rejectWorkflow,
+  runDir,
   startWorkflow,
 } from "../packages/core/src/index.js";
 
@@ -33,7 +36,7 @@ test("startWorkflow creates a persisted run with a requirements approval gate", 
   assert.equal(state.status, "awaiting_approval");
   assert.equal(state.backend, "codex");
   assert.equal(state.gates.requirements, "pending");
-  assert.match(state.runId, /^af-/);
+  assert.match(state.runId, /^dc-/);
   assert.ok(state.artifacts.requirements?.endsWith("requirements.md"));
 
   const artifact = await getArtifact({ cwd, runId: state.runId, name: "requirements" });
@@ -129,6 +132,27 @@ test("fallback artifacts include requester answers and rejection feedback beyond
   assert.match(architecture.content, /CSV is required/);
   assert.match(architecture.content, /Rejection Feedback/);
   assert.match(architecture.content, /Clarify export format/);
+});
+
+test("saveState writes a loadable state without leaving temp files", async () => {
+  const cwd = await tempProject();
+  const state = await startWorkflow({
+    cwd,
+    host: "codex",
+    mode: "feature",
+    request: "Add export history",
+  });
+
+  const loaded = await loadState(cwd, state.runId);
+  assert.equal(loaded.runId, state.runId);
+  JSON.parse(await readFile(join(runDir(cwd, state.runId), "state.json"), "utf8"));
+
+  const files = await readdir(runDir(cwd, state.runId));
+  assert.equal(files.some((file) => file.includes(".tmp")), false);
+});
+
+test("core exports the shared DevCrew version", () => {
+  assert.equal(DEVCREW_VERSION, "0.1.0");
 });
 
 test("discoverStandards prefers explicit DevCrew standards and includes project conventions", async () => {

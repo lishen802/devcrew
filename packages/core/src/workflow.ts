@@ -35,7 +35,7 @@ function now(): string {
 }
 
 function newRunId(): string {
-  return `af-${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`;
+  return `dc-${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`;
 }
 
 export function nextPhaseAfterGate(gate: GateName): RunState["phase"] {
@@ -81,7 +81,11 @@ async function writeCurrentArtifact(state: RunState): Promise<RunState> {
   return state;
 }
 
-export async function startWorkflow(input: StartWorkflowInput, skipArtifactWrite = false): Promise<RunState> {
+export interface WorkflowMutationOptions {
+  skipArtifactWrite?: boolean;
+}
+
+export async function startWorkflow(input: StartWorkflowInput, options: WorkflowMutationOptions = {}): Promise<RunState> {
   const cwd = parseCwd(input.cwd);
   const host = parseHost(input.host);
   const mode = parseWorkflowMode(input.mode);
@@ -115,7 +119,7 @@ export async function startWorkflow(input: StartWorkflowInput, skipArtifactWrite
     standards: await discoverStandards(cwd),
   };
 
-  if (!skipArtifactWrite) {
+  if (!options.skipArtifactWrite) {
     await writeCurrentArtifact(state);
   }
   return saveState(state);
@@ -180,7 +184,7 @@ export async function rejectWorkflow(input: RejectWorkflowInput): Promise<RunSta
   return saveState(state);
 }
 
-export async function answerWorkflow(input: AnswerWorkflowInput, skipArtifactWrite = false): Promise<RunState> {
+export async function answerWorkflow(input: AnswerWorkflowInput, options: WorkflowMutationOptions = {}): Promise<RunState> {
   const state = await getWorkflowStatus(input);
   state.answers.push({
     answer: parseAnswer(input.answer),
@@ -191,7 +195,7 @@ export async function answerWorkflow(input: AnswerWorkflowInput, skipArtifactWri
     state.gates[gate] = "pending";
     state.status = "awaiting_approval";
   }
-  if (!skipArtifactWrite) {
+  if (!options.skipArtifactWrite) {
     await writeCurrentArtifact(state);
   }
   return saveState(state);

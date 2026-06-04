@@ -4,6 +4,7 @@ import { join } from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
 
+import { DEVCREW_VERSION } from "../packages/core/src/index.js";
 import {
   generateCodexMarketplace,
   generateClaudePlugin,
@@ -21,6 +22,7 @@ test("generateCodexPlugin writes a valid Codex plugin manifest and entry skill",
 
   const manifest = JSON.parse(await readFile(join(plugin.path, ".codex-plugin", "plugin.json"), "utf8"));
   assert.equal(manifest.name, "devcrew");
+  assert.equal(manifest.version, DEVCREW_VERSION);
   assert.equal(manifest.skills, "./skills/");
   assert.equal(manifest.mcpServers, "./.mcp.json");
   assert.equal(manifest.interface.displayName, "DevCrew");
@@ -57,6 +59,7 @@ test("generateClaudePlugin writes a Claude plugin with agents and MCP config", a
 
   const manifest = JSON.parse(await readFile(join(plugin.path, ".claude-plugin", "plugin.json"), "utf8"));
   assert.equal(manifest.name, "devcrew");
+  assert.equal(manifest.version, DEVCREW_VERSION);
 
   const agent = await readFile(join(plugin.path, "agents", "architect.md"), "utf8");
   assert.match(agent, /name: architect/);

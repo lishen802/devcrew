@@ -123,7 +123,10 @@ export function listDevCrewTools(): DevCrewTool[] {
 
 function summarizeState(state: RunState): string {
   const pendingGate = Object.entries(state.gates).find(([, status]) => status === "pending")?.[0] ?? "none";
-  return `Run ${state.runId}: phase=${state.phase}, status=${state.status}, pending_gate=${pendingGate}`;
+  const role = state.roles.at(-1);
+  const roleFallback =
+    role?.usedFallback === true ? (role.backend === "local" ? "local" : "sdk") : role ? "none" : "none";
+  return `Run ${state.runId}: phase=${state.phase}, status=${state.status}, pending_gate=${pendingGate}, role_fallback=${roleFallback}`;
 }
 
 function success(text: string, structuredContent?: Record<string, unknown>): ToolResult {

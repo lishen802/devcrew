@@ -50,6 +50,16 @@ async function writeMarkdownArtifact(state: RunState, artifact: ArtifactName, ma
   return path;
 }
 
+function fallbackNotice(result: RoleResult): string {
+  if (!result.usedFallback) {
+    return "";
+  }
+  if (result.backend === "local") {
+    return `> DevCrew local fallback: this artifact uses the deterministic local planning template because the local backend does not call an external SDK.\n\n`;
+  }
+  return `> DevCrew SDK fallback: this artifact uses the deterministic planning template because the ${result.backend} SDK was unavailable.\n> Reason: ${result.summary}\n\n`;
+}
+
 async function readPriorArtifacts(state: RunState): Promise<Record<string, string>> {
   const priorArtifacts: Record<string, string> = {};
   for (const name of priorArtifactNamesForPhase(state.phase)) {
@@ -92,7 +102,7 @@ async function runCurrentPhaseRole(state: RunState, runner: RoleRunner = runRole
 
   // When the backend cannot run a real SDK we keep a single deterministic
   // artifact source by rendering the rich phase template from the core layer.
-  const markdown = result.usedFallback ? renderArtifact(artifact, state) : result.markdown;
+  const markdown = result.usedFallback ? `${fallbackNotice(result)}${renderArtifact(artifact, state)}` : result.markdown;
   state.roles.push({ ...result, markdown });
   state.artifacts[artifact] = await writeMarkdownArtifact(state, artifact, markdown);
   state.gates[gate] = "pending";
@@ -101,7 +111,7 @@ async function runCurrentPhaseRole(state: RunState, runner: RoleRunner = runRole
 }
 
 export async function startOrchestratedWorkflow(input: StartWorkflowInput, runner: RoleRunner = runRole): Promise<RunState> {
-  const state = await startWorkflow(input, true);
+  const state = await startWorkflow(input, { skipArtifactWrite: true });
   return runCurrentPhaseRole(state, runner);
 }
 
@@ -115,7 +125,7 @@ export async function continueOrchestratedWorkflow(input: RunRef, runner: RoleRu
 }
 
 export async function answerOrchestratedWorkflow(input: AnswerWorkflowInput, runner: RoleRunner = runRole): Promise<RunState> {
-  const state = await answerWorkflow(input, true);
+  const state = await answerWorkflow(input, { skipArtifactWrite: true });
   const gate = gateForPhase(state.phase);
   const role = roleForPhase(state.phase);
   if (!gate || !role) {

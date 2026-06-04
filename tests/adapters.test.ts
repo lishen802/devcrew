@@ -20,7 +20,7 @@ test("renderRolePrompt includes role, phase, request, standards, and artifact pa
     request: "Build a workflow service",
     mode: "greenfield",
     standards: "Use TypeScript strict mode.",
-    artifactPath: "docs/devcrew/af-demo/architecture.md",
+    artifactPath: "docs/devcrew/dc-demo/architecture.md",
   });
 
   assert.match(prompt, /Role: architect/);
@@ -37,7 +37,7 @@ test("renderRolePrompt includes prior artifacts for downstream roles", () => {
     request: "Add SSO login",
     mode: "feature",
     standards: "Run npm test.",
-    artifactPath: "docs/devcrew/af-demo/implementation-plan.md",
+    artifactPath: "docs/devcrew/dc-demo/implementation-plan.md",
     priorArtifacts: {
       requirements: "# Requirements\n\nOnly OIDC is in scope.",
       architecture: "# Architecture\n\nUse the existing auth module.",
@@ -60,7 +60,7 @@ test("runRole falls back to deterministic local output when host SDKs are unavai
     mode: "feature",
     cwd: process.cwd(),
     standards: "Run npm test.",
-    artifactPath: "docs/devcrew/af-demo/test-report.md",
+    artifactPath: "docs/devcrew/dc-demo/test-report.md",
   });
 
   assert.equal(result.backend, "codex");

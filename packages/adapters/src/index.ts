@@ -79,51 +79,135 @@ function titleForPhase(phase: Phase): string {
   }[phase];
 }
 
+// --- Host SDK contracts -----------------------------------------------------
+// These types pin the published surface of the optional host SDKs so the
+// adapter logic is type-checked even though the packages are not installed.
+// Verified against @openai/codex-sdk 0.136.0 (sdk/typescript/src/threadOptions.ts
+// and thread.ts) and @anthropic-ai/claude-agent-sdk (Agent SDK TypeScript
+// reference). Update these when the upstream contracts change.
+
+export type CodexSandboxMode = "read-only" | "workspace-write" | "danger-full-access";
+export type CodexApprovalMode = "never" | "on-request" | "on-failure" | "untrusted";
+
+export interface CodexThreadOptions {
+  model?: string;
+  sandboxMode?: CodexSandboxMode;
+  workingDirectory?: string;
+  skipGitRepoCheck?: boolean;
+  approvalPolicy?: CodexApprovalMode;
+  networkAccessEnabled?: boolean;
+}
+
+export interface CodexTurn {
+  finalResponse?: unknown;
+  items?: unknown[];
+  usage?: unknown;
+}
+
+interface CodexThread {
+  run: (prompt: string, options?: Record<string, unknown>) => Promise<CodexTurn>;
+}
+
+interface CodexClient {
+  startThread: (options?: CodexThreadOptions) => CodexThread;
+}
+
+type CodexConstructor = new () => CodexClient;
+
+export type ClaudePermissionMode = "default" | "acceptEdits" | "bypassPermissions" | "plan";
+
+export interface ClaudeQueryOptions {
+  cwd?: string;
+  permissionMode?: ClaudePermissionMode;
+  allowedTools?: string[];
+  disallowedTools?: string[];
+}
+
+export type ClaudeResultSubtype = "success" | "error_max_turns" | "error_during_execution";
+
+export interface ClaudeResultMessage {
+  type: "result";
+  subtype?: ClaudeResultSubtype;
+  result?: unknown;
+  is_error?: boolean;
+}
+
+export interface ClaudeMessage {
+  type?: string;
+  subtype?: string;
+  result?: unknown;
+  is_error?: boolean;
+}
+
+type ClaudeQueryFn = (input: {
+  prompt: string;
+  options?: ClaudeQueryOptions;
+}) => AsyncIterable<ClaudeMessage>;
+
+export type ModuleLoader = (specifier: string) => Promise<Record<string, unknown>>;
+
 // Dynamic import with a non-literal specifier so the optional host SDKs do not
 // need to be installed (or type-resolved) for DevCrew to build and run.
-async function importOptional(specifier: string): Promise<Record<string, unknown>> {
+const importOptional: ModuleLoader = async (specifier: string) => {
   const dynamicSpecifier: string = specifier;
   return (await import(dynamicSpecifier)) as Record<string, unknown>;
+};
+
+// --- Pure, testable contract helpers ---------------------------------------
+
+export function buildCodexThreadOptions(
+  cwd: string,
+  sandboxMode: CodexSandboxMode = "read-only",
+): CodexThreadOptions {
+  return { workingDirectory: cwd, skipGitRepoCheck: true, sandboxMode };
 }
 
-async function runWithCodex(prompt: string, cwd: string): Promise<string> {
-  const mod = await importOptional("@openai/codex-sdk");
-  const CodexClass = mod.Codex as new () => {
-    startThread: (options?: Record<string, unknown>) => {
-      run: (prompt: string) => Promise<{ finalResponse?: unknown }>;
-    };
-  };
-  const codex = new CodexClass();
-  const thread = codex.startThread({ workingDirectory: cwd, skipGitRepoCheck: true, sandboxMode: "read-only" });
-  const turn = await thread.run(prompt);
+export function extractCodexText(turn: CodexTurn | undefined): string {
   const text = typeof turn?.finalResponse === "string" ? turn.finalResponse.trim() : "";
   if (!text) {
-    throw new Error("Codex SDK returned an empty response");
+    throw new Error("Codex SDK returned an empty finalResponse");
   }
   return text;
 }
 
-async function runWithClaude(prompt: string, cwd: string): Promise<string> {
-  const mod = await importOptional("@anthropic-ai/claude-agent-sdk");
-  const query = mod.query as (input: {
-    prompt: string;
-    options?: Record<string, unknown>;
-  }) => AsyncIterable<{ type?: string; result?: unknown }>;
-  let finalText = "";
-  for await (const message of query({
-    prompt,
-    // Read-only planning mode keeps roles from modifying the repository.
-    options: { cwd, permissionMode: "plan", allowedTools: ["Read", "Grep", "Glob"] },
-  })) {
-    if (message?.type === "result" && typeof message.result === "string") {
-      finalText = message.result;
-    }
+export function buildClaudeOptions(cwd: string): ClaudeQueryOptions {
+  // Read-only planning mode keeps roles from modifying the repository.
+  return { cwd, permissionMode: "plan", allowedTools: ["Read", "Grep", "Glob"] };
+}
+
+export function extractClaudeResult(message: ClaudeResultMessage | undefined): string {
+  if (!message) {
+    throw new Error("Claude Agent SDK did not return a result message");
   }
-  const text = finalText.trim();
+  if (message.is_error || (message.subtype && message.subtype !== "success")) {
+    throw new Error(`Claude Agent SDK ended with subtype "${message.subtype ?? "unknown"}"`);
+  }
+  const text = typeof message.result === "string" ? message.result.trim() : "";
   if (!text) {
-    throw new Error("Claude Agent SDK returned an empty response");
+    throw new Error("Claude Agent SDK returned an empty result");
   }
   return text;
+}
+
+async function runWithCodex(prompt: string, cwd: string, loadModule: ModuleLoader): Promise<string> {
+  const mod = await loadModule("@openai/codex-sdk");
+  const CodexClass = mod.Codex as CodexConstructor;
+  const codex = new CodexClass();
+  const thread = codex.startThread(buildCodexThreadOptions(cwd));
+  const turn = await thread.run(prompt);
+  return extractCodexText(turn);
+}
+
+async function runWithClaude(prompt: string, cwd: string, loadModule: ModuleLoader): Promise<string> {
+  const mod = await loadModule("@anthropic-ai/claude-agent-sdk");
+  const query = mod.query as ClaudeQueryFn;
+  let resultMessage: ClaudeResultMessage | undefined;
+  for await (const message of query({ prompt, options: buildClaudeOptions(cwd) })) {
+    if (message?.type === "result") {
+      resultMessage = message as ClaudeResultMessage;
+    }
+  }
+  return extractClaudeResult(resultMessage);
 }
 
 function fallbackResult(
@@ -141,7 +225,12 @@ function fallbackResult(
   };
 }
 
-export async function runRole(input: RoleRunInput): Promise<RoleResult> {
+export interface RunRoleDeps {
+  loadModule?: ModuleLoader;
+}
+
+export async function runRole(input: RoleRunInput, deps: RunRoleDeps = {}): Promise<RoleResult> {
+  const loadModule = deps.loadModule ?? importOptional;
   const title = titleForPhase(input.phase);
   const prompt = renderRolePrompt(input);
 
@@ -156,7 +245,9 @@ export async function runRole(input: RoleRunInput): Promise<RoleResult> {
 
   try {
     const markdown =
-      input.backend === "codex" ? await runWithCodex(prompt, input.cwd) : await runWithClaude(prompt, input.cwd);
+      input.backend === "codex"
+        ? await runWithCodex(prompt, input.cwd, loadModule)
+        : await runWithClaude(prompt, input.cwd, loadModule);
     return {
       role: input.role,
       backend: input.backend,

@@ -39,6 +39,7 @@ test("startOrchestratedWorkflow runs the PM role before opening the requirements
   assert.ok(requirementsPath);
   const requirements = await readFile(requirementsPath, "utf8");
   // The local backend has no SDK, so the artifact uses the rich phase template.
+  assert.match(requirements, /DevCrew local fallback/);
   assert.match(requirements, /## Product Boundary/);
   assert.match(requirements, /Add billing export/);
 });
@@ -67,8 +68,27 @@ test("continueOrchestratedWorkflow runs the phase role and writes its markdown a
   assert.ok(architecturePath);
   const architecture = await readFile(architecturePath, "utf8");
   // The local backend has no SDK, so the artifact uses the rich phase template.
+  assert.match(architecture, /DevCrew local fallback/);
   assert.match(architecture, /## Proposed Components/);
   assert.match(architecture, /Add release note generation/);
+});
+
+test("orchestrated SDK fallback artifacts include a warning and reason", async () => {
+  const cwd = await tempProject();
+  const started = await startOrchestratedWorkflow({
+    cwd,
+    host: "codex",
+    mode: "feature",
+    request: "Add changelog generation",
+    backend: "codex",
+  });
+
+  const requirementsPath = started.artifacts.requirements;
+  assert.ok(requirementsPath);
+  const requirements = await readFile(requirementsPath, "utf8");
+  assert.match(requirements, /DevCrew SDK fallback/);
+  assert.match(requirements, /codex SDK was unavailable/);
+  assert.match(requirements, /Cannot find package|Cannot find module|module/);
 });
 
 test("continueOrchestratedWorkflow passes prior artifacts into the phase role", async () => {

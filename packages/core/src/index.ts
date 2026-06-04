@@ -5,4 +5,5 @@ export * from "./standards.js";
 export * from "./store.js";
 export * from "./types.js";
 export * from "./validation.js";
+export * from "./version.js";
 export * from "./workflow.js";

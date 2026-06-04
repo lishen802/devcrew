@@ -1,12 +1,15 @@
 import {
-  answerWorkflow,
   approveWorkflow,
   getArtifact,
   getWorkflowStatus,
   rejectWorkflow,
   type RunState,
 } from "../../core/src/index.js";
-import { continueOrchestratedWorkflow, startOrchestratedWorkflow } from "../../orchestrator/src/index.js";
+import {
+  answerOrchestratedWorkflow,
+  continueOrchestratedWorkflow,
+  startOrchestratedWorkflow,
+} from "../../orchestrator/src/index.js";
 
 export interface DevCrewTool {
   name: string;
@@ -151,7 +154,7 @@ export async function callDevCrewTool(name: string, args: Record<string, unknown
       return success(summarizeState(state), { state });
     }
     if (name === "devcrew_answer") {
-      const state = await answerWorkflow(args as never);
+      const state = await answerOrchestratedWorkflow(args as never);
       return success(`${summarizeState(state)}. Answer recorded.`, { state });
     }
     if (name === "devcrew_approve") {

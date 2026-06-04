@@ -57,7 +57,7 @@ test("MCP tool calls create, inspect, approve, continue, and read artifacts", as
     runId,
     name: "architecture",
   });
-  assert.match(artifact.content[0].text, /architect prepared deterministic Architecture fallback/);
+  assert.match(artifact.content[0].text, /## Proposed Components/);
   assert.match(artifact.content[0].text, /Architecture/);
 });
 

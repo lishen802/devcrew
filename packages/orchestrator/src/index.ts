@@ -1,12 +1,17 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
 import { runRole } from "../../adapters/src/index.js";
+import type { RoleRunInput } from "../../adapters/src/index.js";
 import {
+  answerWorkflow,
   artifactPath,
+  ARTIFACTS,
   getWorkflowStatus,
+  renderArtifact,
   saveState,
   startWorkflow,
+  type AnswerWorkflowInput,
   type ArtifactName,
   type GateName,
   type Phase,
@@ -15,6 +20,8 @@ import {
   type RunState,
   type StartWorkflowInput,
 } from "../../core/src/index.js";
+
+type RoleRunner = (input: RoleRunInput) => Promise<RoleResult>;
 
 function roleForPhase(phase: Phase): RoleResult["role"] | undefined {
   const roles: Partial<Record<Phase, RoleResult["role"]>> = {
@@ -45,6 +52,15 @@ function artifactForPhase(phase: Phase): ArtifactName {
   return artifacts[phase];
 }
 
+function priorArtifactNamesForPhase(phase: Phase): ArtifactName[] {
+  const current = artifactForPhase(phase);
+  const currentIndex = ARTIFACTS.indexOf(current);
+  if (currentIndex <= 0) {
+    return [];
+  }
+  return ARTIFACTS.slice(0, currentIndex);
+}
+
 async function writeMarkdownArtifact(state: RunState, artifact: ArtifactName, markdown: string): Promise<string> {
   const path = artifactPath(state.cwd, state.runId, artifact);
   await mkdir(dirname(path), { recursive: true });
@@ -52,7 +68,19 @@ async function writeMarkdownArtifact(state: RunState, artifact: ArtifactName, ma
   return path;
 }
 
-async function runCurrentPhaseRole(state: RunState): Promise<RunState> {
+async function readPriorArtifacts(state: RunState): Promise<Record<string, string>> {
+  const priorArtifacts: Record<string, string> = {};
+  for (const name of priorArtifactNamesForPhase(state.phase)) {
+    const path = state.artifacts[name];
+    if (!path) {
+      continue;
+    }
+    priorArtifacts[name] = await readFile(path, "utf8");
+  }
+  return priorArtifacts;
+}
+
+async function runCurrentPhaseRole(state: RunState, runner: RoleRunner = runRole): Promise<RunState> {
   const gate = gateForPhase(state.phase);
   const role = roleForPhase(state.phase);
   if (!gate || !role) {
@@ -62,7 +90,7 @@ async function runCurrentPhaseRole(state: RunState): Promise<RunState> {
 
   const artifact = artifactForPhase(state.phase);
   const path = artifactPath(state.cwd, state.runId, artifact);
-  const result = await runRole({
+  const result = await runner({
     backend: state.backend,
     role,
     phase: state.phase,
@@ -71,25 +99,44 @@ async function runCurrentPhaseRole(state: RunState): Promise<RunState> {
     cwd: state.cwd,
     standards: state.standards.combined,
     artifactPath: path,
+    answers: state.answers.map((entry) => entry.answer),
+    feedback: state.feedback.map((entry) => `${entry.gate}: ${entry.message}`),
+    priorArtifacts: await readPriorArtifacts(state),
   });
 
-  state.roles.push(result);
-  state.artifacts[artifact] = await writeMarkdownArtifact(state, artifact, result.markdown);
+  // When the backend cannot run a real SDK we keep a single deterministic
+  // artifact source by rendering the rich phase template from the core layer.
+  const markdown = result.usedFallback ? renderArtifact(artifact, state) : result.markdown;
+  state.roles.push({ ...result, markdown });
+  state.artifacts[artifact] = await writeMarkdownArtifact(state, artifact, markdown);
   state.gates[gate] = "pending";
   state.status = "awaiting_approval";
   return saveState(state);
 }
 
-export async function startOrchestratedWorkflow(input: StartWorkflowInput): Promise<RunState> {
+export async function startOrchestratedWorkflow(input: StartWorkflowInput, runner: RoleRunner = runRole): Promise<RunState> {
   const state = await startWorkflow(input);
-  return runCurrentPhaseRole(state);
+  return runCurrentPhaseRole(state, runner);
 }
 
-export async function continueOrchestratedWorkflow(input: RunRef): Promise<RunState> {
+export async function continueOrchestratedWorkflow(input: RunRef, runner: RoleRunner = runRole): Promise<RunState> {
   const state = await getWorkflowStatus(input);
   if (state.status === "awaiting_approval" || state.status === "awaiting_input" || state.status === "complete") {
     return state;
   }
 
-  return runCurrentPhaseRole(state);
+  return runCurrentPhaseRole(state, runner);
+}
+
+export async function answerOrchestratedWorkflow(input: AnswerWorkflowInput, runner: RoleRunner = runRole): Promise<RunState> {
+  const state = await answerWorkflow(input);
+  const gate = gateForPhase(state.phase);
+  const role = roleForPhase(state.phase);
+  if (!gate || !role) {
+    return state;
+  }
+
+  // Re-run the current phase role so the artifact reflects the new answer and
+  // any rejection feedback, instead of reverting to the static template.
+  return runCurrentPhaseRole(state, runner);
 }

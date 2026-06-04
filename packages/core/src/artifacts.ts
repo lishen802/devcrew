@@ -36,6 +36,10 @@ function feedbackBlock(state: RunState): string {
   return state.feedback.map((feedback) => `- ${feedback.gate}: ${feedback.message}`).join("\n");
 }
 
+function workflowContextBlock(state: RunState): string {
+  return `## Workflow Context\n\n### Requester Answers\n\n${answerBlock(state)}\n\n### Rejection Feedback\n\n${feedbackBlock(state)}\n`;
+}
+
 export function renderArtifact(name: ArtifactName, state: RunState): string {
   const title = headingForArtifact(name);
   const common = `# ${title}\n\nRun: ${state.runId}\nMode: ${state.mode}\nHost: ${state.host}\nBackend: ${state.backend}\nRequest: ${state.request}\n\n`;
@@ -45,15 +49,15 @@ export function renderArtifact(name: ArtifactName, state: RunState): string {
   }
 
   if (name === "architecture") {
-    return `${common}## Technical Architecture\n\n- Use the repository's existing language, framework, and module boundaries when this is a feature workflow.\n- For greenfield workflows, keep the first implementation small enough to ship and test end to end.\n- Record data flow, interfaces, deployment expectations, and rollback considerations.\n\n## Proposed Components\n\n- Workflow service: owns state transitions, gates, and MCP tool handlers.\n- Host adapter: selects Codex or Claude execution based on the current host or config override.\n- Artifact writer: persists Markdown outputs under docs/devcrew for review.\n\n## Review Checklist\n\n- Architecture traces directly to approved requirements.\n- Implementation can be tested without a live production integration.\n- Security and permission decisions remain delegated to the host agent runtime.\n`;
+    return `${common}${workflowContextBlock(state)}\n## Technical Architecture\n\n- Use the repository's existing language, framework, and module boundaries when this is a feature workflow.\n- For greenfield workflows, keep the first implementation small enough to ship and test end to end.\n- Record data flow, interfaces, deployment expectations, and rollback considerations.\n\n## Proposed Components\n\n- Workflow service: owns state transitions, gates, and MCP tool handlers.\n- Host adapter: selects Codex or Claude execution based on the current host or config override.\n- Artifact writer: persists Markdown outputs under docs/devcrew for review.\n\n## Review Checklist\n\n- Architecture traces directly to approved requirements.\n- Implementation can be tested without a live production integration.\n- Security and permission decisions remain delegated to the host agent runtime.\n`;
   }
 
   if (name === "implementation-plan") {
-    return `${common}## Implementation Tasks\n\n1. Update or create focused tests for the requested behavior.\n2. Implement the smallest code path that satisfies the approved architecture.\n3. Preserve discovered standards and existing repository conventions.\n4. Write or update user-facing docs for changed behavior.\n5. Run the project validation commands and capture evidence.\n\n## Code Review Criteria\n\n- Changes stay inside the approved scope.\n- Public interfaces match the architecture artifact.\n- Tests cover success, failure, and gate behavior where applicable.\n`;
+    return `${common}${workflowContextBlock(state)}\n## Implementation Tasks\n\n1. Update or create focused tests for the requested behavior.\n2. Implement the smallest code path that satisfies the approved architecture.\n3. Preserve discovered standards and existing repository conventions.\n4. Write or update user-facing docs for changed behavior.\n5. Run the project validation commands and capture evidence.\n\n## Code Review Criteria\n\n- Changes stay inside the approved scope.\n- Public interfaces match the architecture artifact.\n- Tests cover success, failure, and gate behavior where applicable.\n`;
   }
 
   if (name === "test-report") {
-    return `${common}## Test Report\n\n## Planned Verification\n\n- Run unit tests for changed modules.\n- Run integration or MCP contract checks when tool behavior changes.\n- Run build or typecheck before completion.\n\n## Acceptance Evidence\n\nRecord exact commands, exit codes, and important output here after execution.\n\n## Known Risks\n\n- Host SDK availability may vary by user environment.\n- Agent permissions are inherited from the host and must be reviewed there.\n`;
+    return `${common}${workflowContextBlock(state)}\n## Test Report\n\n## Planned Verification\n\n- Run unit tests for changed modules.\n- Run integration or MCP contract checks when tool behavior changes.\n- Run build or typecheck before completion.\n\n## Acceptance Evidence\n\nRecord exact commands, exit codes, and important output here after execution.\n\n## Known Risks\n\n- Host SDK availability may vary by user environment.\n- Agent permissions are inherited from the host and must be reviewed there.\n`;
   }
 
   return `${common}## Acceptance Summary\n\nThe requester approved requirements, architecture, implementation planning, and test reporting gates for this run.\n\n## Approved Gates\n\n${Object.entries(state.gates)

@@ -46,6 +46,7 @@ export interface RoleResult {
   backend: BackendName;
   summary: string;
   markdown: string;
+  usedFallback: boolean;
 }
 
 export interface WorkflowFeedback {

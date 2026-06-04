@@ -30,6 +30,27 @@ test("renderRolePrompt includes role, phase, request, standards, and artifact pa
   assert.match(prompt, /architecture.md/);
 });
 
+test("renderRolePrompt includes prior artifacts for downstream roles", () => {
+  const prompt = renderRolePrompt({
+    role: "implementer",
+    phase: "implementation",
+    request: "Add SSO login",
+    mode: "feature",
+    standards: "Run npm test.",
+    artifactPath: "docs/devcrew/af-demo/implementation-plan.md",
+    priorArtifacts: {
+      requirements: "# Requirements\n\nOnly OIDC is in scope.",
+      architecture: "# Architecture\n\nUse the existing auth module.",
+    },
+  });
+
+  assert.match(prompt, /Prior Artifacts/);
+  assert.match(prompt, /requirements/);
+  assert.match(prompt, /Only OIDC is in scope/);
+  assert.match(prompt, /architecture/);
+  assert.match(prompt, /existing auth module/);
+});
+
 test("runRole falls back to deterministic local output when host SDKs are unavailable", async () => {
   const result = await runRole({
     backend: "codex",

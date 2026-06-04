@@ -101,6 +101,36 @@ test("rejectWorkflow records feedback and answerWorkflow returns the gate to pen
   assert.match(artifact.content, /Out of scope: analytics dashboard/);
 });
 
+test("fallback artifacts include requester answers and rejection feedback beyond requirements", async () => {
+  const cwd = await tempProject();
+  const state = await startWorkflow({
+    cwd,
+    host: "codex",
+    mode: "feature",
+    request: "Add billing exports",
+    backend: "local",
+  });
+  await rejectWorkflow({
+    cwd,
+    runId: state.runId,
+    gate: "requirements",
+    feedback: "Clarify export format",
+  });
+  await answerWorkflow({
+    cwd,
+    runId: state.runId,
+    answer: "CSV is required; PDF is out of scope.",
+  });
+  await approveWorkflow({ cwd, runId: state.runId, gate: "requirements" });
+  await continueWorkflow({ cwd, runId: state.runId });
+
+  const architecture = await getArtifact({ cwd, runId: state.runId, name: "architecture" });
+  assert.match(architecture.content, /Requester Answers/);
+  assert.match(architecture.content, /CSV is required/);
+  assert.match(architecture.content, /Rejection Feedback/);
+  assert.match(architecture.content, /Clarify export format/);
+});
+
 test("discoverStandards prefers explicit DevCrew standards and includes project conventions", async () => {
   const cwd = await tempProject();
   await writeFile(join(cwd, "AGENTS.md"), "Follow repo agent rules.\n");

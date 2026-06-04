@@ -14,6 +14,9 @@ export interface RoleRunInput {
   cwd: string;
   standards: string;
   artifactPath: string;
+  answers?: string[];
+  feedback?: string[];
+  priorArtifacts?: Record<string, string>;
 }
 
 export function resolveBackendName(input: BackendResolutionInput): BackendName {
@@ -24,7 +27,10 @@ export function resolveBackendName(input: BackendResolutionInput): BackendName {
 }
 
 export function renderRolePrompt(input: Omit<RoleRunInput, "backend" | "cwd">): string {
-  return [
+  const answers = input.answers ?? [];
+  const feedback = input.feedback ?? [];
+  const priorArtifacts = input.priorArtifacts ?? {};
+  const lines = [
     `Role: ${input.role}`,
     `Phase: ${input.phase}`,
     `Mode: ${input.mode}`,
@@ -33,10 +39,33 @@ export function renderRolePrompt(input: Omit<RoleRunInput, "backend" | "cwd">): 
     "",
     "Project Standards:",
     input.standards,
+  ];
+
+  if (answers.length > 0) {
+    lines.push("", "Requester Answers:", ...answers.map((answer, index) => `${index + 1}. ${answer}`));
+  }
+
+  if (feedback.length > 0) {
+    lines.push("", "Rejection Feedback To Address:", ...feedback.map((entry) => `- ${entry}`));
+  }
+
+  const artifactEntries = Object.entries(priorArtifacts);
+  if (artifactEntries.length > 0) {
+    lines.push("", "Prior Artifacts:");
+    for (const [name, content] of artifactEntries) {
+      lines.push("", `### ${name}`, content.trim());
+    }
+  }
+
+  lines.push(
     "",
     "Instructions:",
-    "Produce concise Markdown for the assigned phase. Keep scope aligned with approved gates and inherited host permissions.",
-  ].join("\n");
+    `Act as the DevCrew ${input.role} role and produce a complete, well-structured Markdown document for the ${input.phase} phase.`,
+    "Keep scope aligned with the approved gates and inherited host permissions.",
+    "Do not modify repository files. Return only the Markdown document content for the artifact.",
+  );
+
+  return lines.join("\n");
 }
 
 function titleForPhase(phase: Phase): string {
@@ -50,29 +79,98 @@ function titleForPhase(phase: Phase): string {
   }[phase];
 }
 
-async function canImport(moduleName: string): Promise<boolean> {
-  try {
-    const dynamicImport = new Function("moduleName", "return import(moduleName)") as (name: string) => Promise<unknown>;
-    await dynamicImport(moduleName);
-    return true;
-  } catch {
-    return false;
+// Dynamic import with a non-literal specifier so the optional host SDKs do not
+// need to be installed (or type-resolved) for DevCrew to build and run.
+async function importOptional(specifier: string): Promise<Record<string, unknown>> {
+  const dynamicSpecifier: string = specifier;
+  return (await import(dynamicSpecifier)) as Record<string, unknown>;
+}
+
+async function runWithCodex(prompt: string, cwd: string): Promise<string> {
+  const mod = await importOptional("@openai/codex-sdk");
+  const CodexClass = mod.Codex as new () => {
+    startThread: (options?: Record<string, unknown>) => {
+      run: (prompt: string) => Promise<{ finalResponse?: unknown }>;
+    };
+  };
+  const codex = new CodexClass();
+  const thread = codex.startThread({ workingDirectory: cwd, skipGitRepoCheck: true, sandboxMode: "read-only" });
+  const turn = await thread.run(prompt);
+  const text = typeof turn?.finalResponse === "string" ? turn.finalResponse.trim() : "";
+  if (!text) {
+    throw new Error("Codex SDK returned an empty response");
   }
+  return text;
+}
+
+async function runWithClaude(prompt: string, cwd: string): Promise<string> {
+  const mod = await importOptional("@anthropic-ai/claude-agent-sdk");
+  const query = mod.query as (input: {
+    prompt: string;
+    options?: Record<string, unknown>;
+  }) => AsyncIterable<{ type?: string; result?: unknown }>;
+  let finalText = "";
+  for await (const message of query({
+    prompt,
+    // Read-only planning mode keeps roles from modifying the repository.
+    options: { cwd, permissionMode: "plan", allowedTools: ["Read", "Grep", "Glob"] },
+  })) {
+    if (message?.type === "result" && typeof message.result === "string") {
+      finalText = message.result;
+    }
+  }
+  const text = finalText.trim();
+  if (!text) {
+    throw new Error("Claude Agent SDK returned an empty response");
+  }
+  return text;
+}
+
+function fallbackResult(
+  role: RoleResult["role"],
+  backend: BackendName,
+  title: string,
+  summary: string,
+): RoleResult {
+  return {
+    role,
+    backend,
+    summary,
+    markdown: `# ${title}\n\n${summary}\n`,
+    usedFallback: true,
+  };
 }
 
 export async function runRole(input: RoleRunInput): Promise<RoleResult> {
-  const prompt = renderRolePrompt(input);
-  const sdkModule = input.backend === "codex" ? "@openai/codex-sdk" : input.backend === "claude" ? "@anthropic-ai/claude-agent-sdk" : undefined;
-  const sdkAvailable = sdkModule ? await canImport(sdkModule) : false;
   const title = titleForPhase(input.phase);
-  const summary = sdkAvailable
-    ? `${input.role} prepared ${title} using ${input.backend} SDK.`
-    : `${input.role} prepared deterministic ${title} fallback because ${input.backend} SDK is not installed.`;
+  const prompt = renderRolePrompt(input);
 
-  return {
-    role: input.role,
-    backend: input.backend,
-    summary,
-    markdown: `# ${title}\n\n${summary}\n\n## Prompt\n\n\`\`\`text\n${prompt}\n\`\`\`\n`,
-  };
+  if (input.backend === "local") {
+    return fallbackResult(
+      input.role,
+      input.backend,
+      title,
+      `${input.role} prepared a deterministic ${title} because the local backend does not call an external SDK.`,
+    );
+  }
+
+  try {
+    const markdown =
+      input.backend === "codex" ? await runWithCodex(prompt, input.cwd) : await runWithClaude(prompt, input.cwd);
+    return {
+      role: input.role,
+      backend: input.backend,
+      summary: `${input.role} produced ${title} using the ${input.backend} SDK.`,
+      markdown,
+      usedFallback: false,
+    };
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    return fallbackResult(
+      input.role,
+      input.backend,
+      title,
+      `${input.role} prepared a deterministic ${title} fallback because the ${input.backend} SDK was unavailable: ${reason}`,
+    );
+  }
 }

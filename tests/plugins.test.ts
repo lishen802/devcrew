@@ -5,6 +5,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  generateCodexMarketplace,
   generateClaudePlugin,
   generateCodexPlugin,
   initProject,
@@ -21,10 +22,29 @@ test("generateCodexPlugin writes a valid Codex plugin manifest and entry skill",
   const manifest = JSON.parse(await readFile(join(plugin.path, ".codex-plugin", "plugin.json"), "utf8"));
   assert.equal(manifest.name, "devcrew");
   assert.equal(manifest.skills, "./skills/");
+  assert.equal(manifest.mcpServers, "./.mcp.json");
+  assert.equal(manifest.interface.displayName, "DevCrew");
 
   const skill = await readFile(join(plugin.path, "skills", "devcrew", "SKILL.md"), "utf8");
   assert.match(skill, /devcrew_start/);
   assert.match(skill, /devcrew_approve/);
+
+  const mcp = JSON.parse(await readFile(join(plugin.path, ".mcp.json"), "utf8"));
+  assert.equal(mcp.mcpServers.devcrew.command, "npx");
+  assert.deepEqual(mcp.mcpServers.devcrew.args, ["-y", "github:lishen802/devcrew", "serve", "--stdio"]);
+});
+
+test("generateCodexMarketplace writes a repo marketplace entry for plugin installation", async () => {
+  const root = await tempProject();
+  await generateCodexPlugin(root);
+  const marketplace = await generateCodexMarketplace(root);
+
+  const content = JSON.parse(await readFile(marketplace.path, "utf8"));
+  assert.equal(content.name, "devcrew");
+  assert.equal(content.interface.displayName, "DevCrew");
+  assert.equal(content.plugins[0].name, "devcrew");
+  assert.equal(content.plugins[0].source.path, "./plugins/devcrew-codex");
+  assert.equal(content.plugins[0].policy.installation, "AVAILABLE");
 });
 
 test("generateClaudePlugin writes a Claude plugin with agents and MCP config", async () => {
@@ -50,5 +70,6 @@ test("initProject creates config, standards placeholder, docs directory, and bot
   await stat(join(root, ".devcrew", "standards.md"));
   await stat(join(root, "docs", "devcrew"));
   await stat(join(result.codex.path, ".codex-plugin", "plugin.json"));
+  await stat(join(root, ".agents", "plugins", "marketplace.json"));
   await stat(join(result.claude.path, ".claude-plugin", "plugin.json"));
 });

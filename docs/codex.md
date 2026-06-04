@@ -1,5 +1,25 @@
 # Codex Setup
 
+## Plugin marketplace install
+
+Add the DevCrew marketplace:
+
+```bash
+codex plugin marketplace add lishen802/devcrew
+```
+
+Restart Codex, open the plugin directory, select the DevCrew marketplace, and install the DevCrew plugin.
+
+The plugin launches the MCP server with:
+
+```bash
+npx -y github:lishen802/devcrew serve --stdio
+```
+
+Use this path when you want to use DevCrew without cloning the repository first.
+
+## Local development install
+
 Run:
 
 ```bash

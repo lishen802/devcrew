@@ -1,0 +1,20 @@
+{
+  "name": "devcrew",
+  "interface": {
+    "displayName": "DevCrew"
+  },
+  "plugins": [
+    {
+      "name": "devcrew",
+      "source": {
+        "source": "local",
+        "path": "./plugins/devcrew-codex"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

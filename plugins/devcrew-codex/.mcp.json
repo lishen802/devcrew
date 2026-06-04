@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "devcrew": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "github:lishen802/devcrew",
+        "serve",
+        "--stdio"
+      ]
+    }
+  }
+}

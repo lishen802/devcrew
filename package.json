@@ -20,7 +20,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "node --import tsx --test tests/*.test.ts",
-    "validate": "npm run build && npm test"
+    "validate": "npm run build && npm test",
+    "prepare": "npm run build"
   },
   "devDependencies": {
     "@types/node": "^20.19.0",

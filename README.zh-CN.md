@@ -18,6 +18,24 @@ DevCrew 是一个面向 Codex、Claude Code 等编程 Agent 的本地工作流�
 - 提供 MCP 工具：`devcrew_start`、`devcrew_status`、`devcrew_answer`、`devcrew_approve`、`devcrew_reject`、`devcrew_continue`、`devcrew_artifact`。
 - 可通过 `devcrew init` 生成 Codex 和 Claude Code 插件骨架。
 
+## 作为 Codex 插件安装
+
+添加 DevCrew marketplace：
+
+```bash
+codex plugin marketplace add lishen802/devcrew
+```
+
+重启 Codex，打开插件目录，选择 DevCrew marketplace，然后安装 DevCrew 插件。
+
+插件会用下面的命令启动 DevCrew MCP 服务：
+
+```bash
+npx -y github:lishen802/devcrew serve --stdio
+```
+
+也就是说，只是使用插件时不需要先克隆源码；你只需要本机有 Node.js，并且 Codex 第一次启动 MCP 服务时可以访问网络。
+
 ## 从源码安装
 
 ```bash

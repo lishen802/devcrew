@@ -1,0 +1,39 @@
+{
+  "name": "devcrew",
+  "version": "0.1.0",
+  "description": "DevCrew gated multi-role workflow service for Codex.",
+  "author": {
+    "name": "DevCrew Contributors",
+    "url": "https://github.com/lishen802/devcrew"
+  },
+  "homepage": "https://github.com/lishen802/devcrew#readme",
+  "repository": "https://github.com/lishen802/devcrew",
+  "license": "Apache-2.0",
+  "keywords": [
+    "codex",
+    "agents",
+    "workflow",
+    "mcp",
+    "skills"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "DevCrew",
+    "shortDescription": "Run gated PM, architecture, implementation, and testing workflows.",
+    "longDescription": "DevCrew helps Codex run feature and product development through explicit requirements, architecture, implementation planning, and testing gates.",
+    "developerName": "DevCrew Contributors",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive",
+      "Write"
+    ],
+    "websiteURL": "https://github.com/lishen802/devcrew",
+    "defaultPrompt": [
+      "Use DevCrew to plan this feature.",
+      "Use DevCrew to build this product.",
+      "Use DevCrew to review this implementation plan."
+    ],
+    "brandColor": "#2563EB"
+  }
+}

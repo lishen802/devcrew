@@ -60,7 +60,7 @@ export function renderArtifact(name: ArtifactName, state: RunState): string {
     return `${common}${workflowContextBlock(state)}\n## Test Report\n\n## Planned Verification\n\n- Run unit tests for changed modules.\n- Run integration or MCP contract checks when tool behavior changes.\n- Run build or typecheck before completion.\n\n## Acceptance Evidence\n\nRecord exact commands, exit codes, and important output here after execution.\n\n## Known Risks\n\n- Host SDK availability may vary by user environment.\n- Agent permissions are inherited from the host and must be reviewed there.\n`;
   }
 
-  return `${common}## Acceptance Summary\n\nThe requester approved requirements, architecture, implementation planning, and test reporting gates for this run.\n\n## Approved Gates\n\n${Object.entries(state.gates)
+  return `${common}${workflowContextBlock(state)}\n## Acceptance Summary\n\nThe requester approved requirements, architecture, implementation planning, and test reporting gates for this run.\n\n## Approved Gates\n\n${Object.entries(state.gates)
     .map(([gate, status]) => `- ${gate}: ${status}`)
     .join("\n")}\n`;
 }

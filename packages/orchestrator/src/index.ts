@@ -66,6 +66,10 @@ async function runCurrentPhaseRole(state: RunState, runner: RoleRunner = runRole
   const gate = gateForPhase(state.phase);
   const role = roleForPhase(state.phase);
   if (!gate || !role) {
+    const artifact = artifactForPhase(state.phase);
+    const markdown = renderArtifact(artifact, state);
+    state.artifacts[artifact] = await writeMarkdownArtifact(state, artifact, markdown);
+    state.phase = "complete";
     state.status = "complete";
     return saveState(state);
   }

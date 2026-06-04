@@ -162,13 +162,7 @@ export async function approveWorkflow(input: ApproveWorkflowInput): Promise<RunS
 
   const nextPhase = nextPhaseAfterGate(gate);
   state.phase = nextPhase;
-  if (nextPhase === "acceptance") {
-    await writeCurrentArtifact(state);
-    state.phase = "complete";
-    state.status = "complete";
-  } else {
-    state.status = "ready";
-  }
+  state.status = "ready";
   return saveState(state);
 }
 

@@ -9,7 +9,11 @@ import assert from "node:assert/strict";
 import { approveWorkflow, rejectWorkflow, startWorkflow } from "../packages/core/src/index.js";
 import {
   answerOrchestratedWorkflow,
+  changedSinceBaseline,
   continueOrchestratedWorkflow,
+  rejectOrchestratedWorkflow,
+  revertChangedFiles,
+  runShellCommand,
   startOrchestratedWorkflow,
 } from "../packages/orchestrator/src/index.js";
 import type { RoleRunInput } from "../packages/adapters/src/index.js";
@@ -251,4 +255,128 @@ test("apply mode tester runs configured verification commands and writes accepta
   assert.match(testReport, /Acceptance Evidence/);
   assert.match(testReport, /devcrew-verify-ok/);
   assert.match(testReport, /Exit Code: 0/);
+});
+
+test("changedSinceBaseline excludes pre-existing uncommitted edits", () => {
+  const baseline = [" M existing.ts"];
+  const current = [" M existing.ts", "?? generated.ts", " M src/app.ts"];
+  assert.deepEqual(changedSinceBaseline(baseline, current), ["?? generated.ts", " M src/app.ts"]);
+});
+
+test("revertChangedFiles restores tracked files from HEAD and deletes untracked files", async () => {
+  const gitCalls: string[][] = [];
+  const removed: string[] = [];
+
+  const runGit = async (args: string[]): Promise<{ exitCode: number; stdout: string }> => {
+    gitCalls.push(args);
+    if (args[0] === "cat-file") {
+      // README.md exists in HEAD (tracked); generated.ts does not.
+      return { exitCode: args[2] === "HEAD:README.md" ? 0 : 1, stdout: "" };
+    }
+    return { exitCode: 0, stdout: "" };
+  };
+  const removeFile = async (absolutePath: string): Promise<void> => {
+    removed.push(absolutePath);
+  };
+
+  await revertChangedFiles("/repo", [" M README.md", "?? generated.ts"], { runGit, removeFile });
+
+  // The tracked file is restored from HEAD via git restore.
+  assert.ok(
+    gitCalls.some(
+      (args) => args[0] === "restore" && args[1] === "--source=HEAD" && args.at(-1) === "README.md",
+    ),
+    "expected a git restore --source=HEAD -- README.md call",
+  );
+  // The untracked file is deleted (never checked out).
+  assert.ok(!gitCalls.some((args) => args[0] === "restore" && args.at(-1) === "generated.ts"));
+  assert.equal(removed.length, 1);
+  assert.match(removed[0], /generated\.ts$/);
+});
+
+test("revertChangedFiles uses the rename destination path", async () => {
+  const gitCalls: string[][] = [];
+  const runGit = async (args: string[]): Promise<{ exitCode: number; stdout: string }> => {
+    gitCalls.push(args);
+    return { exitCode: 0, stdout: "" };
+  };
+
+  await revertChangedFiles("/repo", ["R  old.ts -> new.ts"], { runGit, removeFile: async () => {} });
+
+  assert.ok(gitCalls.some((args) => args[0] === "cat-file" && args[2] === "HEAD:new.ts"));
+  assert.ok(gitCalls.some((args) => args[0] === "restore" && args.at(-1) === "new.ts"));
+});
+
+test("revertChangedFiles throws when restoring a tracked file fails", async () => {
+  const runGit = async (args: string[]): Promise<{ exitCode: number; stdout: string }> => {
+    if (args[0] === "cat-file") {
+      return { exitCode: 0, stdout: "" };
+    }
+    return { exitCode: 128, stdout: "restore failed" };
+  };
+
+  await assert.rejects(
+    () => revertChangedFiles("/repo", [" M README.md"], { runGit, removeFile: async () => {} }),
+    /Failed to restore README\.md/,
+  );
+});
+
+test("runShellCommand kills and reports a command that exceeds its timeout", async () => {
+  const cwd = await tempProject();
+  const result = await runShellCommand("sleep 10", cwd, 200);
+  assert.equal(result.exitCode, 124);
+  assert.match(result.output, /timed out after 200ms/);
+});
+
+test("runShellCommand captures exit code and output within the timeout", async () => {
+  const cwd = await tempProject();
+  const result = await runShellCommand("echo devcrew-ok", cwd, 5_000);
+  assert.equal(result.exitCode, 0);
+  assert.match(result.output, /devcrew-ok/);
+});
+
+test("apply mode reject rolls back implementer edits to leave a clean tree", async () => {
+  const cwd = await tempProject();
+  await initGitRepo(cwd);
+
+  const started = await startOrchestratedWorkflow({
+    cwd,
+    host: "codex",
+    mode: "feature",
+    request: "Add a generated module",
+    backend: "local",
+    executionMode: "apply",
+  });
+  await approveWorkflow({ cwd, runId: started.runId, gate: "requirements" });
+  await continueOrchestratedWorkflow({ cwd, runId: started.runId });
+  await approveWorkflow({ cwd, runId: started.runId, gate: "architecture" });
+
+  const runner = async (input: RoleRunInput): Promise<RoleResult> => {
+    if (input.role === "implementer") {
+      await writeFile(join(input.cwd, "generated.ts"), "export const generated = true;\n");
+      await writeFile(join(input.cwd, "README.md"), "# Overwritten by implementer\n");
+    }
+    return {
+      role: input.role,
+      backend: input.backend,
+      summary: `${input.role} completed`,
+      markdown: `# ${input.role}\n\nDone.\n`,
+      usedFallback: false,
+    };
+  };
+
+  const implemented = await continueOrchestratedWorkflow({ cwd, runId: started.runId }, runner);
+  assert.deepEqual(implemented.changedFiles.sort(), [" M README.md", "?? generated.ts"].sort());
+
+  const rejected = await rejectOrchestratedWorkflow({
+    cwd,
+    runId: started.runId,
+    gate: "implementation",
+    feedback: "Start over with a smaller change",
+  });
+
+  assert.deepEqual(rejected.changedFiles, []);
+  // The newly created file is removed and the tracked file is restored to HEAD.
+  await assert.rejects(() => readFile(join(cwd, "generated.ts"), "utf8"));
+  assert.equal(await readFile(join(cwd, "README.md"), "utf8"), "# Test Project\n");
 });

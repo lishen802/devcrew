@@ -40,6 +40,17 @@ test("buildCodexThreadOptions can request a writable sandbox for apply mode", ()
   assert.equal(options.sandboxMode, "workspace-write");
 });
 
+test("buildCodexThreadOptions leaves writable sandbox approval to the host", () => {
+  const options = buildCodexThreadOptions("/tmp/project", "workspace-write");
+  assert.equal(options.approvalPolicy, undefined);
+  assert.equal(options.networkAccessEnabled, undefined);
+});
+
+test("buildCodexThreadOptions leaves read-only runs without an approval override", () => {
+  const options = buildCodexThreadOptions("/tmp/project");
+  assert.equal(options.approvalPolicy, undefined);
+});
+
 test("runRole gives implementer a writable Codex sandbox only in apply mode", async () => {
   let receivedOptions: CodexThreadOptions | undefined;
   let receivedPrompt = "";

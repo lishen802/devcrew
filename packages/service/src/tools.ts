@@ -2,12 +2,12 @@ import {
   approveWorkflow,
   getArtifact,
   getWorkflowStatus,
-  rejectWorkflow,
   type RunState,
 } from "../../core/src/index.js";
 import {
   answerOrchestratedWorkflow,
   continueOrchestratedWorkflow,
+  rejectOrchestratedWorkflow,
   startOrchestratedWorkflow,
 } from "../../orchestrator/src/index.js";
 
@@ -170,7 +170,7 @@ export async function callDevCrewTool(name: string, args: Record<string, unknown
       return success(`${summarizeState(state)}. Gate approved.`, { state });
     }
     if (name === "devcrew_reject") {
-      const state = await rejectWorkflow(args as never);
+      const state = await rejectOrchestratedWorkflow(args as never);
       return success(`${summarizeState(state)}. Gate rejected.`, { state });
     }
     if (name === "devcrew_continue") {

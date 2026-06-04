@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { dirname, resolve as resolvePath } from "node:path";
 
 import { runRole } from "../../adapters/src/index.js";
 import type { RoleRunInput } from "../../adapters/src/index.js";
@@ -12,18 +12,23 @@ import {
   gateForPhase,
   getWorkflowStatus,
   readConfig,
+  rejectWorkflow,
   renderArtifact,
   saveState,
   startWorkflow,
   type AnswerWorkflowInput,
   type ArtifactName,
   type Phase,
+  type RejectWorkflowInput,
   type RoleResult,
   type RunRef,
   type RunState,
   type StartWorkflowInput,
   type VerificationResult,
 } from "../../core/src/index.js";
+
+// Hard cap so a hung apply/verify command cannot block the serialized MCP loop.
+const COMMAND_TIMEOUT_MS = 300_000;
 
 type RoleRunner = (input: RoleRunInput) => Promise<RoleResult>;
 
@@ -79,9 +84,13 @@ async function readPriorArtifacts(state: RunState): Promise<Record<string, strin
   return priorArtifacts;
 }
 
-async function runShellCommand(command: string, cwd: string): Promise<VerificationResult> {
+export async function runShellCommand(
+  command: string,
+  cwd: string,
+  timeoutMs: number = COMMAND_TIMEOUT_MS,
+): Promise<VerificationResult> {
   const startedAt = now();
-  return new Promise((resolve) => {
+  return new Promise((resolveResult) => {
     const child = spawn(command, {
       cwd,
       shell: true,
@@ -90,6 +99,8 @@ async function runShellCommand(command: string, cwd: string): Promise<Verificati
     const chunks: Buffer[] = [];
     const maxOutputBytes = 64_000;
     let collected = 0;
+    let timedOut = false;
+    let settled = false;
 
     function collect(chunk: Buffer): void {
       if (collected >= maxOutputBytes) {
@@ -100,31 +111,55 @@ async function runShellCommand(command: string, cwd: string): Promise<Verificati
       collected += slice.length;
     }
 
+    const killTimer = setTimeout(() => {
+      timedOut = true;
+      child.kill("SIGTERM");
+      setTimeout(() => child.kill("SIGKILL"), 5_000).unref();
+    }, timeoutMs);
+    killTimer.unref();
+
+    function finish(result: VerificationResult): void {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(killTimer);
+      resolveResult(result);
+    }
+
     child.stdout.on("data", collect);
     child.stderr.on("data", collect);
     child.on("error", (error) => {
-      resolve({
-        command,
-        exitCode: 1,
-        output: error.message,
-        startedAt,
-        completedAt: now(),
-      });
+      finish({ command, exitCode: 1, output: error.message, startedAt, completedAt: now() });
     });
     child.on("close", (code) => {
-      resolve({
-        command,
-        exitCode: code ?? 1,
-        output: Buffer.concat(chunks).toString("utf8").trim(),
-        startedAt,
-        completedAt: now(),
-      });
+      const base = Buffer.concat(chunks).toString("utf8").replace(/\s+$/u, "");
+      const output = timedOut
+        ? `${base}\n[devcrew] command timed out after ${timeoutMs}ms`.trim()
+        : base;
+      finish({ command, exitCode: timedOut ? 124 : code ?? 1, output, startedAt, completedAt: now() });
     });
   });
 }
 
-async function collectChangedFiles(cwd: string): Promise<string[]> {
-  const result = await runShellCommand("git status --porcelain -uall", cwd);
+async function runGit(args: string[], cwd: string): Promise<{ exitCode: number; stdout: string }> {
+  return new Promise((resolveResult) => {
+    const child = spawn("git", args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk: Buffer) => {
+      stdout += chunk.toString("utf8");
+    });
+    child.stderr.on("data", (chunk: Buffer) => {
+      stderr += chunk.toString("utf8");
+    });
+    child.on("error", () => resolveResult({ exitCode: 1, stdout: "" }));
+    child.on("close", (code) => resolveResult({ exitCode: code ?? 1, stdout: stdout || stderr }));
+  });
+}
+
+async function listChangedLines(cwd: string): Promise<string[]> {
+  const result = await runShellCommand("git status --porcelain -uall", cwd, 30_000);
   if (result.exitCode !== 0) {
     return [];
   }
@@ -136,6 +171,62 @@ async function collectChangedFiles(cwd: string): Promise<string[]> {
       const path = line.slice(3);
       return !path.startsWith(".devcrew/") && !path.startsWith("docs/devcrew/");
     });
+}
+
+// Files attributable to this run are the porcelain lines that appeared (or
+// changed status) since the baseline captured before the role executed. This
+// keeps a user's pre-existing uncommitted edits out of the changed-files list.
+// The porcelain status prefix is preserved for review (?? = new, M = modified).
+export function changedSinceBaseline(baseline: string[], current: string[]): string[] {
+  const baselineLines = new Set(baseline);
+  return current.filter((line) => !baselineLines.has(line));
+}
+
+// Strip the two-character porcelain status plus its separating space. For
+// rename entries ("R  old -> new") the destination path is what remains
+// relevant, so keep only the post-arrow path when present.
+export function porcelainPath(line: string): string {
+  const raw = line.slice(3).trim();
+  const arrow = raw.indexOf(" -> ");
+  return arrow >= 0 ? raw.slice(arrow + 4) : raw;
+}
+
+export interface RevertDeps {
+  runGit?: (args: string[], cwd: string) => Promise<{ exitCode: number; stdout: string }>;
+  removeFile?: (absolutePath: string) => Promise<void>;
+}
+
+// Roll back implementer edits when an apply-mode gate is rejected.
+// Only the files this run introduced/changed are reverted, so unrelated work in
+// the repository is preserved. Tracked files are restored from HEAD; files that
+// did not exist in HEAD are deleted. Failures are surfaced to the MCP caller.
+export async function revertChangedFiles(
+  cwd: string,
+  changedFiles: string[],
+  deps: RevertDeps = {},
+): Promise<void> {
+  const git = deps.runGit ?? runGit;
+  const removeFile = deps.removeFile ?? ((absolutePath: string) => rm(absolutePath, { force: true }));
+  for (const line of changedFiles) {
+    const file = porcelainPath(line);
+    if (!file) {
+      continue;
+    }
+    const tracked = await git(["cat-file", "-e", `HEAD:${file}`], cwd);
+    if (tracked.exitCode === 0) {
+      const restored = await git(["restore", "--source=HEAD", "--", file], cwd);
+      if (restored.exitCode !== 0) {
+        throw new Error(`Failed to restore ${file}: ${restored.stdout || "git restore failed"}`);
+      }
+    } else {
+      try {
+        await removeFile(resolvePath(cwd, file));
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        throw new Error(`Failed to remove ${file}: ${message}`);
+      }
+    }
+  }
 }
 
 async function runConfiguredVerification(state: RunState): Promise<VerificationResult[]> {
@@ -191,6 +282,12 @@ async function runCurrentPhaseRole(state: RunState, runner: RoleRunner = runRole
 
   const artifact = artifactForPhase(state.phase);
   const path = artifactPath(state.cwd, state.runId, artifact);
+
+  // Snapshot the working tree before an apply-mode implementer runs so the
+  // changed-files list reflects only this run's edits.
+  const applyingImplementation = state.executionMode === "apply" && state.phase === "implementation";
+  const implementationBaseline = applyingImplementation ? await listChangedLines(state.cwd) : [];
+
   const result = await runner({
     backend: state.backend,
     role,
@@ -206,8 +303,8 @@ async function runCurrentPhaseRole(state: RunState, runner: RoleRunner = runRole
     priorArtifacts: await readPriorArtifacts(state),
   });
 
-  if (state.executionMode === "apply" && state.phase === "implementation") {
-    state.changedFiles = await collectChangedFiles(state.cwd);
+  if (applyingImplementation) {
+    state.changedFiles = changedSinceBaseline(implementationBaseline, await listChangedLines(state.cwd));
   }
   if (state.executionMode === "apply" && state.phase === "testing") {
     state.verification = await runConfiguredVerification(state);
@@ -236,6 +333,25 @@ export async function continueOrchestratedWorkflow(input: RunRef, runner: RoleRu
   }
 
   return runCurrentPhaseRole(state, runner);
+}
+
+export async function rejectOrchestratedWorkflow(input: RejectWorkflowInput): Promise<RunState> {
+  const before = await getWorkflowStatus(input);
+  const state = await rejectWorkflow(input);
+
+  // Roll back implementer edits when an apply-mode implementation gate is
+  // rejected so the next attempt starts from a clean working tree.
+  if (
+    before.executionMode === "apply" &&
+    before.phase === "implementation" &&
+    before.changedFiles.length > 0
+  ) {
+    await revertChangedFiles(before.cwd, before.changedFiles);
+    state.changedFiles = [];
+    return saveState(state);
+  }
+
+  return state;
 }
 
 export async function answerOrchestratedWorkflow(input: AnswerWorkflowInput, runner: RoleRunner = runRole): Promise<RunState> {

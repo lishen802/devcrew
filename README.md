@@ -1,5 +1,7 @@
 # DevCrew
 
+English | [简体中文](README.zh-CN.md)
+
 DevCrew is a local workflow service for Codex and Claude Code. It gives coding agents a gated professional delivery process:
 
 Requester -> Product Manager -> Architect -> Implementer -> Tester -> Acceptance.

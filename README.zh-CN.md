@@ -1,5 +1,7 @@
 # DevCrew
 
+[English](README.md) | 简体中文
+
 DevCrew 是一个面向 Codex、Claude Code 等编程 Agent 的本地工作流服务。它把一次功能或产品开发拆成带门禁的专业流程：
 
 需求提出者 -> 产品经理 -> 架构师 -> 实现工程师 -> 测试验收 -> 交付确认。

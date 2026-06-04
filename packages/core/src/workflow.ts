@@ -38,7 +38,7 @@ function newRunId(): string {
   return `af-${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`;
 }
 
-function nextPhaseAfterGate(gate: GateName): RunState["phase"] {
+export function nextPhaseAfterGate(gate: GateName): RunState["phase"] {
   const nextByGate: Record<GateName, RunState["phase"]> = {
     requirements: "architecture",
     architecture: "implementation",
@@ -48,7 +48,7 @@ function nextPhaseAfterGate(gate: GateName): RunState["phase"] {
   return nextByGate[gate];
 }
 
-function artifactForPhase(phase: RunState["phase"]): ArtifactName {
+export function artifactForPhase(phase: RunState["phase"]): ArtifactName {
   const artifactByPhase: Record<RunState["phase"], ArtifactName> = {
     requirements: "requirements",
     architecture: "architecture",
@@ -60,7 +60,7 @@ function artifactForPhase(phase: RunState["phase"]): ArtifactName {
   return artifactByPhase[phase];
 }
 
-function gateForPhase(phase: RunState["phase"]): GateName | undefined {
+export function gateForPhase(phase: RunState["phase"]): GateName | undefined {
   if (phase === "requirements" || phase === "architecture" || phase === "implementation" || phase === "testing") {
     return phase;
   }
@@ -81,7 +81,7 @@ async function writeCurrentArtifact(state: RunState): Promise<RunState> {
   return state;
 }
 
-export async function startWorkflow(input: StartWorkflowInput): Promise<RunState> {
+export async function startWorkflow(input: StartWorkflowInput, skipArtifactWrite = false): Promise<RunState> {
   const cwd = parseCwd(input.cwd);
   const host = parseHost(input.host);
   const mode = parseWorkflowMode(input.mode);
@@ -115,7 +115,9 @@ export async function startWorkflow(input: StartWorkflowInput): Promise<RunState
     standards: await discoverStandards(cwd),
   };
 
-  await writeCurrentArtifact(state);
+  if (!skipArtifactWrite) {
+    await writeCurrentArtifact(state);
+  }
   return saveState(state);
 }
 
@@ -184,7 +186,7 @@ export async function rejectWorkflow(input: RejectWorkflowInput): Promise<RunSta
   return saveState(state);
 }
 
-export async function answerWorkflow(input: AnswerWorkflowInput): Promise<RunState> {
+export async function answerWorkflow(input: AnswerWorkflowInput, skipArtifactWrite = false): Promise<RunState> {
   const state = await getWorkflowStatus(input);
   state.answers.push({
     answer: parseAnswer(input.answer),
@@ -195,7 +197,9 @@ export async function answerWorkflow(input: AnswerWorkflowInput): Promise<RunSta
     state.gates[gate] = "pending";
     state.status = "awaiting_approval";
   }
-  await writeCurrentArtifact(state);
+  if (!skipArtifactWrite) {
+    await writeCurrentArtifact(state);
+  }
   return saveState(state);
 }
 

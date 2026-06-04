@@ -5,15 +5,16 @@ import { runRole } from "../../adapters/src/index.js";
 import type { RoleRunInput } from "../../adapters/src/index.js";
 import {
   answerWorkflow,
+  artifactForPhase,
   artifactPath,
   ARTIFACTS,
+  gateForPhase,
   getWorkflowStatus,
   renderArtifact,
   saveState,
   startWorkflow,
   type AnswerWorkflowInput,
   type ArtifactName,
-  type GateName,
   type Phase,
   type RoleResult,
   type RunRef,
@@ -31,25 +32,6 @@ function roleForPhase(phase: Phase): RoleResult["role"] | undefined {
     testing: "tester",
   };
   return roles[phase];
-}
-
-function gateForPhase(phase: Phase): GateName | undefined {
-  if (phase === "requirements" || phase === "architecture" || phase === "implementation" || phase === "testing") {
-    return phase;
-  }
-  return undefined;
-}
-
-function artifactForPhase(phase: Phase): ArtifactName {
-  const artifacts: Record<Phase, ArtifactName> = {
-    requirements: "requirements",
-    architecture: "architecture",
-    implementation: "implementation-plan",
-    testing: "test-report",
-    acceptance: "acceptance",
-    complete: "acceptance",
-  };
-  return artifacts[phase];
 }
 
 function priorArtifactNamesForPhase(phase: Phase): ArtifactName[] {
@@ -115,7 +97,7 @@ async function runCurrentPhaseRole(state: RunState, runner: RoleRunner = runRole
 }
 
 export async function startOrchestratedWorkflow(input: StartWorkflowInput, runner: RoleRunner = runRole): Promise<RunState> {
-  const state = await startWorkflow(input);
+  const state = await startWorkflow(input, true);
   return runCurrentPhaseRole(state, runner);
 }
 
@@ -129,7 +111,7 @@ export async function continueOrchestratedWorkflow(input: RunRef, runner: RoleRu
 }
 
 export async function answerOrchestratedWorkflow(input: AnswerWorkflowInput, runner: RoleRunner = runRole): Promise<RunState> {
-  const state = await answerWorkflow(input);
+  const state = await answerWorkflow(input, true);
   const gate = gateForPhase(state.phase);
   const role = roleForPhase(state.phase);
   if (!gate || !role) {

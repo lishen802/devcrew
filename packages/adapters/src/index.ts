@@ -256,6 +256,10 @@ function fallbackResult(
   };
 }
 
+function shouldFailOnSdkError(input: RoleRunInput): boolean {
+  return input.executionMode === "apply" && input.backend !== "local";
+}
+
 export interface RunRoleDeps {
   loadModule?: ModuleLoader;
 }
@@ -288,6 +292,9 @@ export async function runRole(input: RoleRunInput, deps: RunRoleDeps = {}): Prom
     };
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
+    if (shouldFailOnSdkError(input)) {
+      throw new Error(`Cannot run DevCrew apply mode with unavailable ${input.backend} SDK: ${reason}`);
+    }
     return fallbackResult(
       input.role,
       input.backend,

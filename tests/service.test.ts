@@ -85,3 +85,19 @@ test("MCP tool calls return structured errors for invalid input", async () => {
   assert.equal(result.isError, true);
   assert.match(result.content[0].text, /mode/);
 });
+
+test("MCP apply start fails when the selected host SDK is unavailable", async () => {
+  const cwd = await tempProject();
+
+  const result = await callDevCrewTool("devcrew_start", {
+    cwd,
+    host: "codex",
+    mode: "feature",
+    executionMode: "apply",
+    request: "Make a real repository change",
+    backend: "codex",
+  });
+
+  assert.equal(result.isError, true);
+  assert.match(result.content[0].text, /Cannot run DevCrew apply mode with unavailable codex SDK/);
+});

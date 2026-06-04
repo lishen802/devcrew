@@ -68,3 +68,21 @@ test("runRole falls back to deterministic local output when host SDKs are unavai
   assert.match(result.summary, /tester/);
   assert.match(result.markdown, /Test Report/);
 });
+
+test("runRole fails apply mode when the selected host SDK is unavailable", async () => {
+  await assert.rejects(
+    () =>
+      runRole({
+        backend: "codex",
+        role: "implementer",
+        phase: "implementation",
+        request: "Change repository files",
+        mode: "feature",
+        executionMode: "apply",
+        cwd: process.cwd(),
+        standards: "Run npm test.",
+        artifactPath: "docs/devcrew/dc-demo/implementation-plan.md",
+      }),
+    /Cannot run DevCrew apply mode with unavailable codex SDK/,
+  );
+});

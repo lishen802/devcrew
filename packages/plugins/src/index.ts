@@ -1,5 +1,7 @@
-import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { constants } from "node:fs";
+import { access, copyFile, mkdir, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { DEFAULT_CONFIG } from "../../core/src/index.js";
 
@@ -15,6 +17,32 @@ export interface GeneratedMarketplace {
 
 async function writeJson(path: string, value: unknown): Promise<void> {
   await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+}
+
+async function bundledAssetPath(name: string): Promise<string> {
+  const moduleDir = dirname(fileURLToPath(import.meta.url));
+  const candidates = [
+    join(moduleDir, "..", "assets", name),
+    join(moduleDir, "..", "..", "..", "..", "packages", "plugins", "assets", name),
+  ];
+
+  for (const candidate of candidates) {
+    try {
+      await access(candidate, constants.R_OK);
+      return candidate;
+    } catch {
+      // Try the next layout: source tree first, compiled package second.
+    }
+  }
+
+  throw new Error(`Missing bundled DevCrew plugin asset: ${name}`);
+}
+
+async function writeCodexAssets(pluginRoot: string): Promise<void> {
+  const assetDir = join(pluginRoot, "assets");
+  await mkdir(assetDir, { recursive: true });
+  await copyFile(await bundledAssetPath("logo.png"), join(assetDir, "logo.png"));
+  await copyFile(await bundledAssetPath("composer-icon.png"), join(assetDir, "composer-icon.png"));
 }
 
 async function writeRoleAgents(root: string, format: "codex" | "claude"): Promise<void> {
@@ -57,6 +85,7 @@ export async function generateCodexPlugin(root: string): Promise<GeneratedPlugin
   const pluginRoot = join(root, "plugins", "devcrew-codex");
   await mkdir(join(pluginRoot, ".codex-plugin"), { recursive: true });
   await mkdir(join(pluginRoot, "skills", "devcrew"), { recursive: true });
+  await writeCodexAssets(pluginRoot);
   await writeJson(join(pluginRoot, ".codex-plugin", "plugin.json"), {
     name: "devcrew",
     version: "0.1.0",
@@ -86,6 +115,8 @@ export async function generateCodexPlugin(root: string): Promise<GeneratedPlugin
         "Use DevCrew to review this implementation plan.",
       ],
       brandColor: "#2563EB",
+      composerIcon: "./assets/composer-icon.png",
+      logo: "./assets/logo.png",
     },
   });
   await writeFile(join(pluginRoot, "skills", "devcrew", "SKILL.md"), entrySkill(), "utf8");

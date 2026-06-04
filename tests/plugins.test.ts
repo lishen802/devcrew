@@ -24,10 +24,14 @@ test("generateCodexPlugin writes a valid Codex plugin manifest and entry skill",
   assert.equal(manifest.skills, "./skills/");
   assert.equal(manifest.mcpServers, "./.mcp.json");
   assert.equal(manifest.interface.displayName, "DevCrew");
+  assert.equal(manifest.interface.logo, "./assets/logo.png");
+  assert.equal(manifest.interface.composerIcon, "./assets/composer-icon.png");
 
   const skill = await readFile(join(plugin.path, "skills", "devcrew", "SKILL.md"), "utf8");
   assert.match(skill, /devcrew_start/);
   assert.match(skill, /devcrew_approve/);
+  await stat(join(plugin.path, "assets", "logo.png"));
+  await stat(join(plugin.path, "assets", "composer-icon.png"));
 
   const mcp = JSON.parse(await readFile(join(plugin.path, ".mcp.json"), "utf8"));
   assert.equal(mcp.mcpServers.devcrew.command, "npx");

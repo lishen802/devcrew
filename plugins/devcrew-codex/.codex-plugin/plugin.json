@@ -34,6 +34,8 @@
       "Use DevCrew to build this product.",
       "Use DevCrew to review this implementation plan."
     ],
-    "brandColor": "#2563EB"
+    "brandColor": "#2563EB",
+    "composerIcon": "./assets/composer-icon.png",
+    "logo": "./assets/logo.png"
   }
 }

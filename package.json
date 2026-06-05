@@ -4,12 +4,29 @@
   "description": "Multi-host agent workflow service for Codex and Claude Code.",
   "type": "module",
   "license": "Apache-2.0",
+  "homepage": "https://github.com/lishen802/devcrew#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lishen802/devcrew.git"
+  },
+  "bugs": {
+    "url": "https://github.com/lishen802/devcrew/issues"
+  },
+  "keywords": [
+    "codex",
+    "claude-code",
+    "mcp",
+    "agents",
+    "workflow",
+    "plugin"
+  ],
   "bin": {
     "devcrew": "./dist/packages/cli/src/index.js"
   },
   "files": [
     "dist/packages",
     "packages",
+    "plugins/devcrew-codex",
     "docs",
     "examples",
     "README.md",
@@ -21,7 +38,10 @@
     "build": "tsc -p tsconfig.json",
     "test": "node --import tsx --test tests/*.test.ts",
     "validate": "npm run build && npm test",
-    "prepare": "npm run build"
+    "prepack": "npm run build"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "devDependencies": {
     "@types/node": "^20.19.0",

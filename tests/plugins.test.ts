@@ -37,7 +37,15 @@ test("generateCodexPlugin writes a valid Codex plugin manifest and entry skill",
 
   const mcp = JSON.parse(await readFile(join(plugin.path, ".mcp.json"), "utf8"));
   assert.equal(mcp.mcpServers.devcrew.command, "npx");
-  assert.deepEqual(mcp.mcpServers.devcrew.args, ["-y", "github:lishen802/devcrew", "serve", "--stdio"]);
+  assert.deepEqual(mcp.mcpServers.devcrew.args, ["-y", `devcrew@${DEVCREW_VERSION}`, "serve", "--stdio"]);
+  assert.deepEqual(mcp.mcpServers.devcrew.env, { DEVCREW_HOST: "codex" });
+});
+
+test("checked-in Codex plugin locks MCP server to the published npm version", async () => {
+  const mcp = JSON.parse(await readFile(join(process.cwd(), "plugins", "devcrew-codex", ".mcp.json"), "utf8"));
+
+  assert.equal(mcp.mcpServers.devcrew.command, "npx");
+  assert.deepEqual(mcp.mcpServers.devcrew.args, ["-y", `devcrew@${DEVCREW_VERSION}`, "serve", "--stdio"]);
   assert.deepEqual(mcp.mcpServers.devcrew.env, { DEVCREW_HOST: "codex" });
 });
 
@@ -67,7 +75,8 @@ test("generateClaudePlugin writes a Claude plugin with agents and MCP config", a
   assert.match(agent, /technical architecture/);
 
   const mcp = JSON.parse(await readFile(join(plugin.path, ".mcp.json"), "utf8"));
-  assert.equal(mcp.mcpServers.devcrew.command, "devcrew");
+  assert.equal(mcp.mcpServers.devcrew.command, "npx");
+  assert.deepEqual(mcp.mcpServers.devcrew.args, ["-y", `devcrew@${DEVCREW_VERSION}`, "serve", "--stdio"]);
   assert.deepEqual(mcp.mcpServers.devcrew.env, { DEVCREW_HOST: "claude" });
 });
 

@@ -25,6 +25,6 @@ For local plugin testing:
 claude --plugin-dir plugins/devcrew-claude
 ```
 
-Then ask Claude Code to use DevCrew for a feature or product workflow. The generated `.mcp.json` starts `devcrew serve --stdio`.
+Then ask Claude Code to use DevCrew for a feature or product workflow. The generated `.mcp.json` starts the version-locked npm package with `npx -y devcrew@0.1.0 serve --stdio`.
 
 Claude Code permissions, hooks, and approval settings remain authoritative. DevCrew inherits the host boundary.

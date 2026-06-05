@@ -2,6 +2,14 @@
 
 ## 1. Install
 
+From npm:
+
+```bash
+npm install -g devcrew
+```
+
+For local development:
+
 ```bash
 npm install
 npm run validate
@@ -29,6 +37,7 @@ devcrew serve --stdio
 ```
 
 Normally the generated plugin starts this command for the host agent.
+Codex and Claude plugin bundles use `npx -y devcrew@0.1.0 serve --stdio` so the MCP service is locked to the published package version.
 
 ## 4. Run A Workflow
 

@@ -34,10 +34,17 @@ Restart Codex, open the plugin directory, choose the DevCrew marketplace, and in
 The plugin starts the DevCrew MCP server with:
 
 ```bash
-npx -y github:lishen802/devcrew serve --stdio
+npx -y devcrew@0.1.0 serve --stdio
 ```
 
-This means you do not need to clone the source just to use the plugin. You only need Node.js and network access the first time Codex starts the MCP server.
+The plugin locks the MCP server to the published npm package version, so users do not need to clone the source or build TypeScript at install time. You only need Node.js and network access the first time Codex starts the MCP server.
+
+## Install From npm
+
+```bash
+npm install -g devcrew
+devcrew --version
+```
 
 ## Install From Source
 
@@ -101,9 +108,12 @@ You can override discovery with explicit commands in `.devcrew/config.json`:
 npm test
 npm run build
 npm run validate
+npm pack --dry-run
 ```
 
 The SDK adapters use deterministic local fallback output when Codex or Claude SDK packages are not installed. This keeps local tests reliable while preserving the adapter boundary for real host integration. In `apply` mode, DevCrew still inherits the host sandbox and approval boundaries.
+
+Public npm publishing is handled by the `npm publish` GitHub Actions workflow. It runs validation, checks the package with `npm pack --dry-run`, and publishes with npm provenance when a GitHub Release is published or the workflow is manually dispatched with `NPM_TOKEN` configured.
 
 ## Documentation
 

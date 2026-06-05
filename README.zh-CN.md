@@ -34,10 +34,17 @@ codex plugin marketplace add lishen802/devcrew
 插件会用下面的命令启动 DevCrew MCP 服务：
 
 ```bash
-npx -y github:lishen802/devcrew serve --stdio
+npx -y devcrew@0.1.0 serve --stdio
 ```
 
-也就是说，只是使用插件时不需要先克隆源码；你只需要本机有 Node.js，并且 Codex 第一次启动 MCP 服务时可以访问网络。
+插件会锁定到已发布的 npm 包版本，因此用户不需要克隆源码，也不需要在安装时编译 TypeScript；只需要本机有 Node.js，并且 Codex 第一次启动 MCP 服务时可以访问网络。
+
+## 通过 npm 安装
+
+```bash
+npm install -g devcrew
+devcrew --version
+```
 
 ## 从源码安装
 
@@ -115,9 +122,12 @@ DevCrew 会自动从常见项目清单中发现验证命令。当前规则会优
 npm test
 npm run build
 npm run validate
+npm pack --dry-run
 ```
 
 当前适配器在未安装 Codex SDK 或 Claude SDK 时会使用确定性的本地 fallback 输出。这样可以保证测试和演示稳定，同时保留接入真实宿主 SDK 的边界。即使在 `apply` 模式下，DevCrew 仍然继承宿主的 sandbox、审批和工具权限。
+
+公开 npm 发布由 `npm publish` GitHub Actions 工作流处理。发布 GitHub Release 或手动触发 workflow 时，它会先运行验证，再执行 `npm pack --dry-run` 检查包内容，最后在配置 `NPM_TOKEN` 后使用 npm provenance 发布公开包。
 
 ## 文档
 

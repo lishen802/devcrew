@@ -18,9 +18,11 @@ test("package metadata is ready for public npm publishing", async () => {
   assert.equal(pkg.homepage, "https://github.com/lishen802/devcrew#readme");
   assert.equal(pkg.bin.devcrew, "./dist/packages/cli/src/index.js");
   assert.equal(pkg.scripts.prepack, "npm run build");
+  assert.equal(pkg.scripts["smoke:codex-plugin"], "node scripts/smoke-codex-plugin.mjs");
   assert.equal(pkg.scripts.prepare, undefined);
   assert.ok(pkg.files.includes("dist/packages"));
   assert.ok(pkg.files.includes("plugins/devcrew-codex"));
+  assert.ok(pkg.files.includes("scripts"));
 });
 
 test("npm publish workflow validates and publishes the public package", async () => {

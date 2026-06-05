@@ -52,3 +52,22 @@ The DevCrew skill tells Codex to use these MCP tools:
 - `devcrew_artifact`
 
 Codex sandbox and approval settings remain authoritative. DevCrew does not bypass them.
+
+## Marketplace smoke test
+
+After publishing the npm package version referenced by the plugin, run the real marketplace smoke test:
+
+```bash
+npm run smoke:codex-plugin
+```
+
+The smoke test creates an isolated `CODEX_HOME`, adds the `lishen802/devcrew` marketplace, installs `devcrew@devcrew`, starts the installed plugin's MCP server from `.mcp.json`, and runs a complete plan-mode workflow through JSON-RPC.
+
+Useful options:
+
+```bash
+node scripts/smoke-codex-plugin.mjs --keep-temp
+node scripts/smoke-codex-plugin.mjs --source lishen802/devcrew --ref main
+```
+
+The default path is intentionally production-like: it uses the GitHub marketplace and the version-locked npm package from the installed plugin. It requires network access, Codex CLI, Node.js, and a published `devcrew` npm version matching the plugin manifest.

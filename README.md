@@ -115,6 +115,14 @@ The SDK adapters use deterministic local fallback output when Codex or Claude SD
 
 Public npm publishing is handled by the `npm publish` GitHub Actions workflow. It runs validation, checks the package with `npm pack --dry-run`, and publishes with npm provenance when a GitHub Release is published or the workflow is manually dispatched with `NPM_TOKEN` configured.
 
+After publishing the npm version referenced by the Codex plugin, run the real marketplace smoke test:
+
+```bash
+npm run smoke:codex-plugin
+```
+
+It installs DevCrew from the Codex marketplace into an isolated `CODEX_HOME`, starts the installed MCP server, and runs a full plan-mode workflow.
+
 ## Documentation
 
 - [Quickstart](docs/quickstart.md)

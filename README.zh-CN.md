@@ -129,6 +129,14 @@ npm pack --dry-run
 
 公开 npm 发布由 `npm publish` GitHub Actions 工作流处理。发布 GitHub Release 或手动触发 workflow 时，它会先运行验证，再执行 `npm pack --dry-run` 检查包内容，最后在配置 `NPM_TOKEN` 后使用 npm provenance 发布公开包。
 
+当 Codex 插件引用的 npm 版本发布完成后，运行真实 marketplace smoke test：
+
+```bash
+npm run smoke:codex-plugin
+```
+
+它会在隔离的 `CODEX_HOME` 中从 Codex marketplace 安装 DevCrew，启动安装后的 MCP 服务，并跑完整的 plan 模式工作流。
+
 ## 文档
 
 - [快速开始](docs/quickstart.md)

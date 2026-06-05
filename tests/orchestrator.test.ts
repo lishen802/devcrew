@@ -57,7 +57,8 @@ test("startOrchestratedWorkflow runs the PM role before opening the requirements
   const requirements = await readFile(requirementsPath, "utf8");
   // The local backend has no SDK, so the artifact uses the rich phase template.
   assert.match(requirements, /DevCrew local fallback/);
-  assert.match(requirements, /## Product Boundary/);
+  assert.match(requirements, /## Functional Scope/);
+  assert.match(requirements, /## Acceptance Criteria/);
   assert.match(requirements, /Add billing export/);
 });
 
@@ -86,7 +87,8 @@ test("continueOrchestratedWorkflow runs the phase role and writes its markdown a
   const architecture = await readFile(architecturePath, "utf8");
   // The local backend has no SDK, so the artifact uses the rich phase template.
   assert.match(architecture, /DevCrew local fallback/);
-  assert.match(architecture, /## Proposed Components/);
+  assert.match(architecture, /## Technical Decisions/);
+  assert.match(architecture, /## Interface Contracts/);
   assert.match(architecture, /Add release note generation/);
 });
 
@@ -178,7 +180,7 @@ test("answerOrchestratedWorkflow re-runs the role and folds the answer into the 
   const requirements = await readFile(requirementsPath, "utf8");
   // The re-run keeps the rich phase template rather than reverting silently,
   // and the recorded answer plus rejection feedback are folded back in.
-  assert.match(requirements, /## Product Boundary/);
+  assert.match(requirements, /## Functional Scope/);
   assert.match(requirements, /Out of scope: SAML and social login providers/);
   assert.match(requirements, /List the out-of-scope items explicitly/);
 });
@@ -218,7 +220,7 @@ test("apply mode records implementer changed files for gate review", async () =>
   const implementationPath = implemented.artifacts["implementation-plan"];
   assert.ok(implementationPath);
   const implementation = await readFile(implementationPath, "utf8");
-  assert.match(implementation, /Changed Files/);
+  assert.match(implementation, /Recorded Changes/);
   assert.match(implementation, /\?\? generated\.ts/);
 });
 

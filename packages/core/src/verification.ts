@@ -70,3 +70,94 @@ export async function discoverVerifyCommands(cwd: string): Promise<string[]> {
   }
   return pythonVerifyCommands(cwd);
 }
+
+export async function readPackageJson(cwd: string): Promise<{ scripts?: Record<string, string>; dependencies?: Record<string, string>; devDependencies?: Record<string, string> } | undefined> {
+  const raw = await readIfExists(join(cwd, "package.json"));
+  if (!raw) {
+    return undefined;
+  }
+  try {
+    return JSON.parse(raw) as { scripts?: Record<string, string>; dependencies?: Record<string, string>; devDependencies?: Record<string, string> };
+  } catch {
+    return undefined;
+  }
+}
+
+async function packageLintCommands(cwd: string): Promise<string[]> {
+  const parsed = await readPackageJson(cwd);
+  if (!parsed) {
+    return [];
+  }
+  const scripts = parsed.scripts ?? {};
+  const commands: string[] = [];
+  if (scripts.typecheck) {
+    commands.push("npm run typecheck");
+  }
+  if (scripts.lint) {
+    commands.push("npm run lint");
+  }
+  if (scripts["format:check"]) {
+    commands.push("npm run format:check");
+  }
+  return commands;
+}
+
+export async function discoverLintCommands(cwd: string): Promise<string[]> {
+  const packageCommands = await packageLintCommands(cwd);
+  if (packageCommands.length > 0) {
+    return packageCommands;
+  }
+  const pyproject = await readIfExists(join(cwd, "pyproject.toml"));
+  if (pyproject) {
+    const commands: string[] = [];
+    if (pyproject.includes("ruff")) {
+      commands.push("ruff check .");
+    }
+    if (pyproject.includes("black")) {
+      commands.push("black --check .");
+    }
+    if (commands.length > 0) {
+      return commands;
+    }
+  }
+  if (await exists(join(cwd, "go.mod"))) {
+    return ["gofmt -l .", "go vet ./..."];
+  }
+  if (await exists(join(cwd, "Cargo.toml"))) {
+    return ["cargo fmt --check", "cargo clippy"];
+  }
+  return [];
+}
+
+async function packageCoverageCommands(cwd: string): Promise<string[]> {
+  const parsed = await readPackageJson(cwd);
+  if (!parsed) {
+    return [];
+  }
+  const scripts = parsed.scripts ?? {};
+  if (scripts.coverage) {
+    return ["npm run coverage"];
+  }
+  const deps = { ...(parsed.dependencies ?? {}), ...(parsed.devDependencies ?? {}) };
+  const testScript = scripts.test ?? "";
+  const usesCoverageRunner = "jest" in deps || "vitest" in deps || testScript.includes("jest") || testScript.includes("vitest");
+  if (scripts.test && usesCoverageRunner) {
+    return ["npm test -- --coverage"];
+  }
+  return [];
+}
+
+export async function discoverCoverageCommands(cwd: string): Promise<string[]> {
+  const packageCommands = await packageCoverageCommands(cwd);
+  if (packageCommands.length > 0) {
+    return packageCommands;
+  }
+  const pyproject = await readIfExists(join(cwd, "pyproject.toml"));
+  if (pyproject && (pyproject.includes("[tool.pytest") || pyproject.includes("pytest"))) {
+    return ["python -m pytest --cov"];
+  }
+  if (await exists(join(cwd, "go.mod"))) {
+    return ["go test -cover ./..."];
+  }
+  return [];
+}

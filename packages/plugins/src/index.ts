@@ -3,7 +3,7 @@ import { access, copyFile, mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { DEFAULT_CONFIG, DEVCREW_VERSION } from "../../core/src/index.js";
+import { DEFAULT_CONFIG, DEVCREW_VERSION, ROLE_SECTIONS } from "../../core/src/index.js";
 
 export interface GeneratedPlugin {
   name: "devcrew";
@@ -45,6 +45,14 @@ async function writeCodexAssets(pluginRoot: string): Promise<void> {
   await copyFile(await bundledAssetPath("composer-icon.png"), join(assetDir, "composer-icon.png"));
 }
 
+function roleExpectations(name: string): string {
+  const sections = ROLE_SECTIONS[name as keyof typeof ROLE_SECTIONS];
+  if (!sections || sections.length === 0) {
+    return "";
+  }
+  return sections.map((s) => `- ${s.heading} (${s.description})`).join("\n");
+}
+
 async function writeRoleAgents(root: string, format: "codex" | "claude"): Promise<void> {
   const roles = [
     ["pm", "Product manager. Clarifies requirements, scope boundaries, success criteria, and requester approvals."],
@@ -59,7 +67,7 @@ async function writeRoleAgents(root: string, format: "codex" | "claude"): Promis
     for (const [name, description] of roles) {
       await writeFile(
         join(agentDir, `${name}.md`),
-        `---\nname: ${name}\ndescription: ${description}\ntools: Read, Grep, Glob, Bash\n---\n\nYou are the DevCrew ${name} role. ${description} Return concise Markdown and keep inherited host permissions.\n`,
+        `---\nname: ${name}\ndescription: ${description}\ntools: Read, Grep, Glob, Bash\n---\n\nYou are the DevCrew ${name} role. ${description} Return concise Markdown and keep inherited host permissions.\n\nProduce these required sections:\n\n${roleExpectations(name)}\n`,
         "utf8",
       );
     }
@@ -71,7 +79,7 @@ async function writeRoleAgents(root: string, format: "codex" | "claude"): Promis
   for (const [name, description] of roles) {
     await writeFile(
       join(agentDir, `${name}.toml`),
-      `name = "${name}"\ndescription = "${description}"\ndeveloper_instructions = """\nYou are the DevCrew ${name} role. ${description}\nReturn concise Markdown and keep inherited host permissions.\n"""\n`,
+      `name = "${name}"\ndescription = "${description}"\ndeveloper_instructions = """\nYou are the DevCrew ${name} role. ${description}\nReturn concise Markdown and keep inherited host permissions.\n\nProduce these required sections:\n${roleExpectations(name)}\n"""\n`,
       "utf8",
     );
   }

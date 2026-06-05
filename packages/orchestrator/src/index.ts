@@ -9,6 +9,8 @@ import {
   artifactForPhase,
   artifactPath,
   ARTIFACTS,
+  discoverCoverageCommands,
+  discoverLintCommands,
   discoverVerifyCommands,
   gateForPhase,
   getWorkflowStatus,
@@ -238,15 +240,42 @@ export async function revertChangedFiles(
   }
 }
 
-async function runConfiguredVerification(state: RunState): Promise<VerificationResult[]> {
-  const config = await readConfig(state.cwd);
-  const configuredCommands = config.verifyCommands.filter((command) => command.trim().length > 0);
-  const commands = configuredCommands.length > 0 ? configuredCommands : await discoverVerifyCommands(state.cwd);
+async function runCommands(commands: string[], cwd: string): Promise<VerificationResult[]> {
   const results: VerificationResult[] = [];
   for (const command of commands) {
-    results.push(await runShellCommand(command, state.cwd));
+    results.push(await runShellCommand(command, cwd));
   }
   return results;
+}
+
+// Tester verification command priority:
+//   1. configured verifyCommands (backward-compatible; coverageCommands is
+//      skipped when this is set)
+//   2. configured coverageCommands
+//   3. discovered coverage commands (npm coverage / jest --coverage / pytest --cov / go test -cover)
+//   4. discovered verify commands (npm validate / npm test / go test / cargo test / pytest)
+async function runConfiguredVerification(state: RunState): Promise<VerificationResult[]> {
+  const config = await readConfig(state.cwd);
+  const configuredVerify = config.verifyCommands.filter((command) => command.trim().length > 0);
+  if (configuredVerify.length > 0) {
+    return runCommands(configuredVerify, state.cwd);
+  }
+  const configuredCoverage = (config.coverageCommands ?? []).filter((command) => command.trim().length > 0);
+  if (configuredCoverage.length > 0) {
+    return runCommands(configuredCoverage, state.cwd);
+  }
+  const discoveredCoverage = await discoverCoverageCommands(state.cwd);
+  const commands = discoveredCoverage.length > 0 ? discoveredCoverage : await discoverVerifyCommands(state.cwd);
+  return runCommands(commands, state.cwd);
+}
+
+// Implementer apply runs lint/format/typecheck so reviewers see standards
+// compliance evidence. Configured lintCommands win, otherwise discover them.
+async function runConfiguredLint(state: RunState): Promise<VerificationResult[]> {
+  const config = await readConfig(state.cwd);
+  const configuredLint = (config.lintCommands ?? []).filter((command) => command.trim().length > 0);
+  const commands = configuredLint.length > 0 ? configuredLint : await discoverLintCommands(state.cwd);
+  return runCommands(commands, state.cwd);
 }
 
 function changedFilesBlock(changedFiles: string[]): string {
@@ -268,9 +297,23 @@ function verificationBlock(results: VerificationResult[]): string {
     .join("\n\n");
 }
 
+function lintBlock(results: VerificationResult[]): string {
+  if (results.length === 0) {
+    return "No lint or format commands were detected.";
+  }
+  return verificationBlock(results);
+}
+
 function appendExecutionSections(artifact: ArtifactName, markdown: string, state: RunState): string {
-  if (artifact === "implementation-plan" && !markdown.includes("## Changed Files")) {
-    return `${markdown.trim()}\n\n## Changed Files\n\n${changedFilesBlock(state.changedFiles)}\n`;
+  if (artifact === "implementation-plan") {
+    let next = markdown.trim();
+    if (!next.includes("## Recorded Changes")) {
+      next = `${next}\n\n## Recorded Changes\n\n${changedFilesBlock(state.changedFiles)}`;
+    }
+    if (!next.includes("## Lint Results")) {
+      next = `${next}\n\n## Lint Results\n\n${lintBlock(state.lintResults)}`;
+    }
+    return `${next}\n`;
   }
   if (artifact === "test-report" && !markdown.includes("## Acceptance Evidence")) {
     return `${markdown.trim()}\n\n## Acceptance Evidence\n\n${verificationBlock(state.verification)}\n`;
@@ -316,6 +359,7 @@ async function runCurrentPhaseRole(state: RunState, runner: RoleRunner = runRole
   if (applyingImplementation) {
     state.changedFiles = changedSinceBaseline(implementationBaseline, await listChangedLines(state.cwd));
     state.implementationDiff = await collectImplementationDiff(state.cwd);
+    state.lintResults = await runConfiguredLint(state);
   }
   if (state.executionMode === "apply" && state.phase === "testing") {
     state.verification = await runConfiguredVerification(state);

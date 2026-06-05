@@ -8,6 +8,8 @@ export const DEFAULT_CONFIG: DevCrewConfig = {
   defaultBackend: "host-preferred",
   executionMode: "plan",
   verifyCommands: [],
+  lintCommands: [],
+  coverageCommands: [],
   workflow: {
     gates: ["requirements", "architecture", "implementation", "testing"],
     artifactDirectory: "docs/devcrew",
@@ -44,6 +46,8 @@ export async function readConfig(cwd: string): Promise<DevCrewConfig> {
     ...parsed,
     executionMode: parsed.executionMode ?? "plan",
     verifyCommands: Array.isArray(parsed.verifyCommands) ? parsed.verifyCommands : [],
+    lintCommands: Array.isArray(parsed.lintCommands) ? parsed.lintCommands : [],
+    coverageCommands: Array.isArray(parsed.coverageCommands) ? parsed.coverageCommands : [],
     workflow: {
       ...DEFAULT_CONFIG.workflow,
       ...parsed.workflow,

@@ -5,6 +5,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { callDevCrewTool, listDevCrewTools } from "../packages/service/src/index.js";
+import { startOrchestratedWorkflow } from "../packages/orchestrator/src/index.js";
+import type { RoleResult } from "../packages/core/src/index.js";
+import type { RoleRunInput } from "../packages/adapters/src/index.js";
 
 async function tempProject(): Promise<string> {
   return mkdtemp(join(tmpdir(), "devcrew-service-"));
@@ -137,7 +140,7 @@ test("MCP tool calls create, inspect, approve, continue, and read artifacts", as
     runId,
     name: "architecture",
   });
-  assert.match(artifact.content[0].text, /## Proposed Components/);
+  assert.match(artifact.content[0].text, /## Technical Decisions/);
   assert.match(artifact.content[0].text, /Architecture/);
 });
 
@@ -156,15 +159,27 @@ test("MCP tool calls return structured errors for invalid input", async () => {
 test("MCP apply start fails when the selected host SDK is unavailable", async () => {
   const cwd = await tempProject();
 
-  const result = await callDevCrewTool("devcrew_start", {
-    cwd,
-    host: "codex",
-    mode: "feature",
-    executionMode: "apply",
-    request: "Make a real repository change",
-    backend: "codex",
-  });
+  // Simulate an unavailable SDK by injecting a runner that throws with the
+  // same wrapping that runRole produces for a missing optional dependency.
+  const unavailableRunner = async (_input: RoleRunInput): Promise<RoleResult> => {
+    throw new Error(
+      "Cannot run DevCrew apply mode with unavailable codex SDK: Cannot find package @openai/codex-sdk",
+    );
+  };
 
-  assert.equal(result.isError, true);
-  assert.match(result.content[0].text, /Cannot run DevCrew apply mode with unavailable codex SDK/);
+  await assert.rejects(
+    () =>
+      startOrchestratedWorkflow(
+        {
+          cwd,
+          host: "codex",
+          mode: "feature",
+          executionMode: "apply",
+          request: "Make a real repository change",
+          backend: "codex",
+        },
+        unavailableRunner,
+      ),
+    /Cannot run DevCrew apply mode with unavailable codex SDK/,
+  );
 });

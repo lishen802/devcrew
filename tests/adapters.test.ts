@@ -6,6 +6,7 @@ import {
   HOST_SDK_PACKAGES,
   renderRolePrompt,
   resolveBackendName,
+  roleGuidance,
   runRole,
   type ModuleLoader,
 } from "../packages/adapters/src/index.js";
@@ -131,4 +132,20 @@ test("runRole fails apply mode when the selected host SDK is unavailable", async
       }, { loadModule }),
     /Cannot run DevCrew apply mode with unavailable codex SDK: .*@openai\/codex-sdk.*--include=optional/,
   );
+});
+
+test("roleGuidance returns structured H2 sections for each role", () => {
+  for (const role of ["pm", "architect", "implementer", "tester"] as const) {
+    const guidance = roleGuidance(role);
+    assert.ok(guidance.length > 0, `roleGuidance should return sections for ${role}`);
+    assert.match(guidance[0], /Produce these exact H2 sections:/);
+    // Every section line after the first must start with ## (H2 heading).
+    for (const line of guidance.slice(1)) {
+      assert.match(line, /^## /);
+    }
+  }
+});
+
+test("roleGuidance returns empty for conductor and unknown roles", () => {
+  assert.deepEqual(roleGuidance("conductor"), []);
 });

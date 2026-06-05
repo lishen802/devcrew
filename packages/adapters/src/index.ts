@@ -1,4 +1,5 @@
-import type { BackendName, ExecutionMode, Host, Phase, RoleResult, WorkflowMode } from "../../core/src/index.js";
+import { ROLE_SECTIONS } from "../../core/src/index.js";
+import type { ArtifactName, BackendName, ExecutionMode, Host, Phase, RoleResult, RunState, WorkflowMode } from "../../core/src/index.js";
 
 export interface BackendResolutionInput {
   host: Host;
@@ -25,6 +26,18 @@ export function resolveBackendName(input: BackendResolutionInput): BackendName {
     return input.configuredBackend;
   }
   return input.host;
+}
+
+// Prompt-formatted role sections derived from the shared ROLE_SECTIONS constant.
+export function roleGuidance(role: RoleResult["role"]): string[] {
+  const sections = ROLE_SECTIONS[role as keyof typeof ROLE_SECTIONS];
+  if (!sections || sections.length === 0) {
+    return [];
+  }
+  return [
+    "Produce these exact H2 sections:",
+    ...sections.map((s) => `## ${s.heading} - ${s.description}.`),
+  ];
 }
 
 export function renderRolePrompt(input: Omit<RoleRunInput, "backend" | "cwd">): string {
@@ -73,6 +86,9 @@ export function renderRolePrompt(input: Omit<RoleRunInput, "backend" | "cwd">): 
     `Act as the DevCrew ${input.role} role and produce a complete, well-structured Markdown document for the ${input.phase} phase.`,
     "Keep scope aligned with the approved gates and inherited host permissions.",
     permissionInstruction,
+    "",
+    "Required Sections:",
+    ...roleGuidance(input.role),
   );
 
   return lines.join("\n");

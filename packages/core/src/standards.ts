@@ -3,6 +3,7 @@ import { join } from "node:path";
 
 import { standardsPath } from "./paths.js";
 import type { StandardsDiscovery } from "./types.js";
+import { readPackageJson } from "./verification.js";
 
 async function readIfExists(path: string): Promise<string | undefined> {
   try {
@@ -18,20 +19,15 @@ function section(path: string, content: string): string {
 }
 
 async function packageJsonSummary(cwd: string): Promise<string | undefined> {
-  const raw = await readIfExists(join(cwd, "package.json"));
-  if (!raw) {
+  const parsed = await readPackageJson(cwd);
+  if (!parsed) {
     return undefined;
   }
-  try {
-    const parsed = JSON.parse(raw) as { scripts?: Record<string, string> };
-    const scripts = Object.keys(parsed.scripts ?? {});
-    if (scripts.length === 0) {
-      return "package.json scripts: none";
-    }
-    return `package.json scripts: ${scripts.join(", ")}`;
-  } catch {
-    return "package.json present but could not be parsed";
+  const scripts = Object.keys(parsed.scripts ?? {});
+  if (scripts.length === 0) {
+    return "package.json scripts: none";
   }
+  return `package.json scripts: ${scripts.join(", ")}`;
 }
 
 export async function discoverStandards(cwd: string): Promise<StandardsDiscovery> {

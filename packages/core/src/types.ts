@@ -30,11 +30,46 @@ export type ArtifactName = (typeof ARTIFACTS)[number];
 export type GateStatus = "not_started" | "pending" | "approved" | "rejected";
 export type RunStatus = "ready" | "awaiting_input" | "awaiting_approval" | "complete";
 
+export interface RoleSection {
+  heading: string;
+  description: string;
+}
+
+export const ROLE_SECTIONS: Record<Exclude<RoleResult["role"], "conductor">, RoleSection[]> = {
+  pm: [
+    { heading: "Functional Scope", description: "explicit In Scope and Out of Scope lists" },
+    { heading: "Users and Scenarios", description: "primary users and their key scenarios" },
+    { heading: "Acceptance Criteria", description: "testable criteria written as Given / When / Then" },
+    { heading: "Priorities", description: "classify each requirement as Must / Should / Could / Won't (MoSCoW)" },
+    { heading: "Open Questions", description: "unresolved clarifications for the requester" },
+  ],
+  architect: [
+    { heading: "Technical Decisions", description: "for each key decision record Decision, Options Considered, Choice, Rationale, and Trade-offs" },
+    { heading: "Interface Contracts", description: "for each interface give the signature, request/response schema, error contract, and data model" },
+    { heading: "Data Flow and Deployment", description: "data flow, deployment expectations, and rollback strategy" },
+    { heading: "Architecture Review Checklist", description: "how the design traces back to the approved requirements" },
+  ],
+  implementer: [
+    { heading: "Implementation Summary", description: "the smallest change that satisfies the approved architecture" },
+    { heading: "Standards Compliance", description: "follow discovered standards and lint/format rules; run available lint/format/typecheck and report results" },
+    { heading: "Changed Files", description: "every file you created or modified" },
+    { heading: "Tests Added or Updated", description: "tests covering success, edge, and failure paths" },
+  ],
+  tester: [
+    { heading: "Test Cases", description: "enumerate cases as a table with ID, Scenario, Type (happy/edge/failure/regression), and Expected result" },
+    { heading: "Coverage", description: "run the coverage command and report the coverage summary plus any gaps" },
+    { heading: "Verification Evidence", description: "exact commands, exit codes, and key output" },
+    { heading: "Known Risks", description: "residual risks and follow-ups" },
+  ],
+};
+
 export interface DevCrewConfig {
   version: 1;
   defaultBackend: "host-preferred" | BackendName;
   executionMode: ExecutionMode;
   verifyCommands: string[];
+  lintCommands: string[];
+  coverageCommands: string[];
   workflow: {
     gates: GateName[];
     artifactDirectory: string;
@@ -71,6 +106,7 @@ export interface WorkflowAnswer {
   createdAt: string;
 }
 
+// Reused for both verification and lint results — the command shape is identical.
 export interface VerificationResult {
   command: string;
   exitCode: number;
@@ -102,6 +138,8 @@ export interface RunState {
   changedFiles: string[];
   implementationDiff: string;
   verification: VerificationResult[];
+  // VerificationResult is reused for lint output — same shape, different semantics.
+  lintResults: VerificationResult[];
 }
 
 export interface StartWorkflowInput {

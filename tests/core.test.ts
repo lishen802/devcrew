@@ -8,6 +8,8 @@ import {
   answerWorkflow,
   approveWorkflow,
   continueWorkflow,
+  discoverCoverageCommands,
+  discoverLintCommands,
   discoverVerifyCommands,
   discoverStandards,
   DEVCREW_VERSION,
@@ -194,6 +196,25 @@ test("saveState writes a loadable state without leaving temp files", async () =>
   assert.equal(files.some((file) => file.includes(".tmp")), false);
 });
 
+test("loadState migrates missing lintResults to empty array", async () => {
+  const cwd = await tempProject();
+  const state = await startWorkflow({
+    cwd,
+    host: "codex",
+    mode: "feature",
+    request: "Add logging",
+  });
+
+  // Simulate an older state file without lintResults.
+  const statePath = join(runDir(cwd, state.runId), "state.json");
+  const raw = JSON.parse(await readFile(statePath, "utf8"));
+  delete raw.lintResults;
+  await writeFile(statePath, JSON.stringify(raw));
+
+  const loaded = await loadState(cwd, state.runId);
+  assert.deepEqual(loaded.lintResults, []);
+});
+
 test("core exports the shared DevCrew version", () => {
   assert.equal(DEVCREW_VERSION, "0.1.0");
 });
@@ -242,4 +263,74 @@ test("discoverVerifyCommands falls back to common project manifests", async () =
   const cargoProject = await tempProject();
   await writeFile(join(cargoProject, "Cargo.toml"), "[package]\nname = \"demo\"\nversion = \"0.1.0\"\n");
   assert.deepEqual(await discoverVerifyCommands(cargoProject), ["cargo test"]);
+});
+
+test("discoverLintCommands returns npm typecheck and lint scripts when defined", async () => {
+  const cwd = await tempProject();
+  await writeFile(
+    join(cwd, "package.json"),
+    JSON.stringify({
+      scripts: {
+        typecheck: "tsc --noEmit",
+        lint: "eslint .",
+        "format:check": "prettier --check .",
+      },
+    }),
+  );
+
+  const commands = await discoverLintCommands(cwd);
+  assert.deepEqual(commands, ["npm run typecheck", "npm run lint", "npm run format:check"]);
+});
+
+test("discoverLintCommands discovers Python ruff and black", async () => {
+  const cwd = await tempProject();
+  await writeFile(join(cwd, "pyproject.toml"), "[tool.ruff]\n[tool.black]\n");
+
+  assert.deepEqual(await discoverLintCommands(cwd), ["ruff check .", "black --check ."]);
+});
+
+test("discoverLintCommands discovers Go and Rust lint commands", async () => {
+  const goProject = await tempProject();
+  await writeFile(join(goProject, "go.mod"), "module example.com/demo\n");
+  assert.deepEqual(await discoverLintCommands(goProject), ["gofmt -l .", "go vet ./..."]);
+
+  const cargoProject = await tempProject();
+  await writeFile(join(cargoProject, "Cargo.toml"), "[package]\nname = \"demo\"\n");
+  assert.deepEqual(await discoverLintCommands(cargoProject), ["cargo fmt --check", "cargo clippy"]);
+});
+
+test("discoverLintCommands returns empty when no lint tooling is found", async () => {
+  const cwd = await tempProject();
+  assert.deepEqual(await discoverLintCommands(cwd), []);
+});
+
+test("discoverCoverageCommands returns npm coverage script when defined", async () => {
+  const cwd = await tempProject();
+  await writeFile(
+    join(cwd, "package.json"),
+    JSON.stringify({ scripts: { coverage: "jest --coverage" } }),
+  );
+  assert.deepEqual(await discoverCoverageCommands(cwd), ["npm run coverage"]);
+});
+
+test("discoverCoverageCommands detects jest and vitest runners", async () => {
+  const cwd = await tempProject();
+  await writeFile(
+    join(cwd, "package.json"),
+    JSON.stringify({
+      scripts: { test: "jest" },
+      devDependencies: { jest: "^29.0.0" },
+    }),
+  );
+  assert.deepEqual(await discoverCoverageCommands(cwd), ["npm test -- --coverage"]);
+});
+
+test("discoverCoverageCommands discovers Python and Go coverage", async () => {
+  const pyProject = await tempProject();
+  await writeFile(join(pyProject, "pyproject.toml"), "[tool.pytest.ini_options]\n");
+  assert.deepEqual(await discoverCoverageCommands(pyProject), ["python -m pytest --cov"]);
+
+  const goProject = await tempProject();
+  await writeFile(join(goProject, "go.mod"), "module example.com/demo\n");
+  assert.deepEqual(await discoverCoverageCommands(goProject), ["go test -cover ./..."]);
 });

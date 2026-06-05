@@ -123,6 +123,7 @@ export async function startWorkflow(input: StartWorkflowInput, options: Workflow
     changedFiles: [],
     implementationDiff: "",
     verification: [],
+    lintResults: [],
   };
 
   if (!options.skipArtifactWrite) {

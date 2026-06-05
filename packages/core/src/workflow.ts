@@ -121,6 +121,7 @@ export async function startWorkflow(input: StartWorkflowInput, options: Workflow
     feedback: [],
     standards: await discoverStandards(cwd),
     changedFiles: [],
+    implementationDiff: "",
     verification: [],
   };
 

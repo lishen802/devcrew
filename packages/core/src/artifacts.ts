@@ -9,6 +9,7 @@ function headingForArtifact(name: ArtifactName): string {
     requirements: "Requirements",
     architecture: "Architecture",
     "implementation-plan": "Implementation Plan",
+    "implementation-review": "Implementation Review",
     "test-report": "Test Report",
     acceptance: "Acceptance",
   }[name];
@@ -59,6 +60,14 @@ function verificationBlock(state: RunState): string {
     .join("\n\n");
 }
 
+function implementationDiffBlock(state: RunState): string {
+  const diff = state.implementationDiff.trim();
+  if (!diff) {
+    return "No implementation diff was captured. Review the changed files list and repository state manually.";
+  }
+  return `\`\`\`diff\n${diff}\n\`\`\``;
+}
+
 export function renderArtifact(name: ArtifactName, state: RunState): string {
   const title = headingForArtifact(name);
   const common = `# ${title}\n\nRun: ${state.runId}\nMode: ${state.mode}\nExecution Mode: ${state.executionMode}\nHost: ${state.host}\nBackend: ${state.backend}\nRequest: ${state.request}\n\n`;
@@ -73,6 +82,10 @@ export function renderArtifact(name: ArtifactName, state: RunState): string {
 
   if (name === "implementation-plan") {
     return `${common}${workflowContextBlock(state)}\n## Implementation Tasks\n\n1. Update or create focused tests for the requested behavior.\n2. Implement the smallest code path that satisfies the approved architecture.\n3. Preserve discovered standards and existing repository conventions.\n4. Write or update user-facing docs for changed behavior.\n5. Run the project validation commands and capture evidence.\n\n## Changed Files\n\n${changedFilesBlock(state)}\n\n## Code Review Criteria\n\n- Changes stay inside the approved scope.\n- Public interfaces match the architecture artifact.\n- Tests cover success, failure, and gate behavior where applicable.\n`;
+  }
+
+  if (name === "implementation-review") {
+    return `${common}${workflowContextBlock(state)}\n## Implementation Diff Review\n\n### Changed Files\n\n${changedFilesBlock(state)}\n\n### Captured Diff\n\n${implementationDiffBlock(state)}\n\n## Architecture Compliance Review\n\n- Confirm changed files map back to the approved architecture artifact.\n- Confirm public interfaces, data flow, and deployment assumptions remain consistent with the architecture.\n- Confirm implementation scope does not include unapproved requirements or unrelated refactors.\n- Record any mismatch as rejection feedback before approving the implementation gate.\n`;
   }
 
   if (name === "test-report") {

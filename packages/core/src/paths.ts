@@ -40,6 +40,7 @@ export function artifactPath(cwd: string, runId: string, artifact: ArtifactName)
     requirements: "requirements.md",
     architecture: "architecture.md",
     "implementation-plan": "implementation-plan.md",
+    "implementation-review": "implementation-review.md",
     "test-report": "test-report.md",
     acceptance: "acceptance.md",
   };

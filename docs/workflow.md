@@ -16,7 +16,7 @@ approval.
 
 1. `requirements`: product manager clarifies scope, users, success criteria, and non-goals.
 2. `architecture`: architect defines technical approach, interfaces, deployment notes, and review criteria.
-3. `implementation`: implementer creates the implementation plan and coding checklist.
+3. `implementation`: implementer creates the implementation plan and coding checklist. DevCrew also writes `implementation-review.md` with changed files, captured diff, and architecture compliance review prompts before opening the implementation gate.
 4. `testing`: tester records validation strategy and acceptance evidence.
 5. `acceptance`: generated after the testing gate is approved.
 
@@ -48,3 +48,12 @@ Reviewable artifacts are stored in:
 ```text
 docs/devcrew/<run-id>/
 ```
+
+The standard artifact set is:
+
+- `requirements.md`
+- `architecture.md`
+- `implementation-plan.md`
+- `implementation-review.md`
+- `test-report.md`
+- `acceptance.md`

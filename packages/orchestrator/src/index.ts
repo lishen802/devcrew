@@ -174,6 +174,14 @@ async function listChangedLines(cwd: string): Promise<string[]> {
     });
 }
 
+async function collectImplementationDiff(cwd: string): Promise<string> {
+  const result = await runShellCommand("git diff --no-ext-diff --", cwd, 30_000);
+  if (result.exitCode !== 0) {
+    return "";
+  }
+  return result.output;
+}
+
 // Files attributable to this run are the porcelain lines that appeared (or
 // changed status) since the baseline captured before the role executed. This
 // keeps a user's pre-existing uncommitted edits out of the changed-files list.
@@ -307,6 +315,7 @@ async function runCurrentPhaseRole(state: RunState, runner: RoleRunner = runRole
 
   if (applyingImplementation) {
     state.changedFiles = changedSinceBaseline(implementationBaseline, await listChangedLines(state.cwd));
+    state.implementationDiff = await collectImplementationDiff(state.cwd);
   }
   if (state.executionMode === "apply" && state.phase === "testing") {
     state.verification = await runConfiguredVerification(state);
@@ -318,6 +327,13 @@ async function runCurrentPhaseRole(state: RunState, runner: RoleRunner = runRole
   const markdown = appendExecutionSections(artifact, baseMarkdown, state);
   state.roles.push({ ...result, markdown });
   state.artifacts[artifact] = await writeMarkdownArtifact(state, artifact, markdown);
+  if (artifact === "implementation-plan") {
+    state.artifacts["implementation-review"] = await writeMarkdownArtifact(
+      state,
+      "implementation-review",
+      renderArtifact("implementation-review", state),
+    );
+  }
   state.gates[gate] = "pending";
   state.status = "awaiting_approval";
   return saveState(state);

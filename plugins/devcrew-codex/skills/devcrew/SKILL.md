@@ -10,7 +10,7 @@ Use the DevCrew MCP tools to manage the workflow:
 3. Use `devcrew_status` to show the current phase and pending gate.
 4. Use `devcrew_answer` when the requester gives clarification.
 5. Use `devcrew_approve` or `devcrew_reject` for each gate.
-6. Use `devcrew_continue` after approvals. This executes the next phase role, writes the phase artifact, and opens the next gate.
-7. Use `devcrew_artifact` to read generated requirements, architecture, implementation-plan, test-report, or acceptance files.
+6. Use `devcrew_continue` after approvals. This executes the next phase role, writes the phase artifact, and opens the next gate. The implementation phase also writes `implementation-review` for diff and architecture compliance review.
+7. Use `devcrew_artifact` to read generated requirements, architecture, implementation-plan, implementation-review, test-report, or acceptance files.
 
 Do not bypass host sandbox, approval, or tool permissions.

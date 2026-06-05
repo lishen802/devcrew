@@ -21,6 +21,7 @@ export async function loadState(cwd: string, runId: string): Promise<RunState> {
     ...parsed,
     executionMode: parsed.executionMode ?? "plan",
     changedFiles: Array.isArray(parsed.changedFiles) ? parsed.changedFiles : [],
+    implementationDiff: typeof parsed.implementationDiff === "string" ? parsed.implementationDiff : "",
     verification: Array.isArray(parsed.verification) ? parsed.verification : [],
   };
 }

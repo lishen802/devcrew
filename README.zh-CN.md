@@ -15,6 +15,7 @@ DevCrew 是一个面向 Codex、Claude Code 等编程 Agent 的本地工作流�
 - 支持安全执行模式：默认是 `plan`，只有显式请求 `apply` 时，implementer/tester 阶段才允许写文件或运行验证命令。
 - 默认按当前宿主选择后端：在 Codex 中优先使用 Codex，在 Claude Code 中优先使用 Claude。
 - 已接入角色编排：`devcrew_start` 会先运行 PM 角色，`devcrew_continue` 会运行下一阶段角色，然后再打开阶段门禁。
+- 实现评审产物：implementation gate 会附带 changed files、捕获的 diff 和架构符合性审查说明。
 - 运行状态写入 `.devcrew/runs/<run-id>/state.json`，评审产物写入 `docs/devcrew/<run-id>/`。
 - 自动发现项目规范：`.devcrew/standards.md`、`AGENTS.md`、`CLAUDE.md`、README 以及常见项目配置文件。
 - 提供 MCP 工具：`devcrew_start`、`devcrew_status`、`devcrew_answer`、`devcrew_approve`、`devcrew_reject`、`devcrew_continue`、`devcrew_artifact`。

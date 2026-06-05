@@ -33,6 +33,13 @@ test("devcrew_start exposes explicit execution mode without making apply the def
   });
 });
 
+test("devcrew_artifact exposes the implementation review artifact", () => {
+  const artifact = listDevCrewTools().find((tool) => tool.name === "devcrew_artifact");
+  assert.ok(artifact);
+  const name = artifact.inputSchema.properties.name as { enum: string[] };
+  assert.ok(name.enum.includes("implementation-review"));
+});
+
 test("MCP tool calls create, inspect, approve, continue, and read artifacts", async () => {
   const cwd = await tempProject();
 

@@ -15,6 +15,7 @@ export const ARTIFACTS = [
   "requirements",
   "architecture",
   "implementation-plan",
+  "implementation-review",
   "test-report",
   "acceptance",
 ] as const;
@@ -99,6 +100,7 @@ export interface RunState {
   feedback: WorkflowFeedback[];
   standards: StandardsDiscovery;
   changedFiles: string[];
+  implementationDiff: string;
   verification: VerificationResult[];
 }
 

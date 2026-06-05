@@ -15,7 +15,9 @@ import {
   loadState,
   rejectWorkflow,
   runDir,
+  saveState,
   startWorkflow,
+  writeArtifact,
 } from "../packages/core/src/index.js";
 
 async function tempProject(): Promise<string> {
@@ -151,6 +153,28 @@ test("fallback artifacts include requester answers and rejection feedback beyond
   assert.match(architecture.content, /CSV is required/);
   assert.match(architecture.content, /Rejection Feedback/);
   assert.match(architecture.content, /Clarify export format/);
+});
+
+test("implementation review artifact summarizes diff and architecture compliance", async () => {
+  const cwd = await tempProject();
+  const state = await startWorkflow({
+    cwd,
+    host: "codex",
+    mode: "feature",
+    request: "Add billing exports",
+    backend: "local",
+  });
+  state.changedFiles = [" M README.md"];
+  state.implementationDiff = "diff --git a/README.md b/README.md\n+Implemented billing exports\n";
+  state.artifacts["implementation-review"] = await writeArtifact("implementation-review", state);
+  await saveState(state);
+
+  const artifact = await getArtifact({ cwd, runId: state.runId, name: "implementation-review" });
+
+  assert.match(artifact.content, /Implementation Diff Review/);
+  assert.match(artifact.content, /Architecture Compliance Review/);
+  assert.match(artifact.content, /M README\.md/);
+  assert.match(artifact.content, /Implemented billing exports/);
 });
 
 test("saveState writes a loadable state without leaving temp files", async () => {

@@ -215,6 +215,46 @@ test("apply mode records implementer changed files for gate review", async () =>
   assert.match(implementation, /\?\? generated\.ts/);
 });
 
+test("implementation phase writes an architecture compliance diff review", async () => {
+  const cwd = await tempProject();
+  await initGitRepo(cwd);
+
+  const started = await startOrchestratedWorkflow({
+    cwd,
+    host: "codex",
+    mode: "feature",
+    request: "Update the README according to the approved architecture",
+    backend: "local",
+    executionMode: "apply",
+  });
+  await approveWorkflow({ cwd, runId: started.runId, gate: "requirements" });
+  await continueOrchestratedWorkflow({ cwd, runId: started.runId });
+  await approveWorkflow({ cwd, runId: started.runId, gate: "architecture" });
+
+  const runner = async (input: RoleRunInput): Promise<RoleResult> => {
+    if (input.role === "implementer") {
+      await writeFile(join(input.cwd, "README.md"), "# Test Project\n\nImplemented architecture details.\n");
+    }
+    return {
+      role: input.role,
+      backend: input.backend,
+      summary: `${input.role} completed`,
+      markdown: `# ${input.role}\n\nDone.\n`,
+      usedFallback: false,
+    };
+  };
+
+  const implemented = await continueOrchestratedWorkflow({ cwd, runId: started.runId }, runner);
+
+  assert.ok(implemented.artifacts["implementation-review"]?.endsWith("implementation-review.md"));
+  assert.match(implemented.implementationDiff, /Implemented architecture details/);
+  const review = await readFile(implemented.artifacts["implementation-review"] ?? "", "utf8");
+  assert.match(review, /Implementation Diff Review/);
+  assert.match(review, /Architecture Compliance Review/);
+  assert.match(review, /M README\.md/);
+  assert.match(review, /Implemented architecture details/);
+});
+
 test("apply mode tester runs configured verification commands and writes acceptance evidence", async () => {
   const cwd = await tempProject();
   await mkdir(join(cwd, ".devcrew"), { recursive: true });

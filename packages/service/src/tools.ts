@@ -118,7 +118,7 @@ export function listDevCrewTools(): DevCrewTool[] {
           runId: runIdProperty,
           name: {
             type: "string",
-            enum: ["requirements", "architecture", "implementation-plan", "test-report", "acceptance"],
+            enum: ["requirements", "architecture", "implementation-plan", "implementation-review", "test-report", "acceptance"],
           },
         },
       },

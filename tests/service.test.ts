@@ -26,11 +26,71 @@ test("MCP tool registry exposes the planned DevCrew tools", () => {
 test("devcrew_start exposes explicit execution mode without making apply the default", () => {
   const start = listDevCrewTools().find((tool) => tool.name === "devcrew_start");
   assert.ok(start);
+  assert.deepEqual(start.inputSchema.required, ["cwd", "mode", "request"]);
   assert.deepEqual(start.inputSchema.properties.executionMode, {
     type: "string",
     enum: ["plan", "apply"],
     description: "Execution mode. Defaults to plan; apply must be explicit.",
   });
+});
+
+test("run-scoped MCP tools can omit runId and use the active run", async () => {
+  const cwd = await tempProject();
+
+  const start = await callDevCrewTool("devcrew_start", {
+    cwd,
+    mode: "feature",
+    request: "Add active run support",
+    backend: "local",
+  });
+  assert.equal(start.isError, false);
+  const runId = (start.structuredContent?.state as { runId: string }).runId;
+
+  const status = await callDevCrewTool("devcrew_status", { cwd });
+  assert.equal(status.isError, false);
+  assert.match(status.content[0].text, new RegExp(runId));
+
+  const approval = await callDevCrewTool("devcrew_approve", {
+    cwd,
+    gate: "requirements",
+    note: "Approved through active run",
+  });
+  assert.equal(approval.isError, false);
+  assert.match(approval.content[0].text, /architecture/);
+
+  const continued = await callDevCrewTool("devcrew_continue", { cwd });
+  assert.equal(continued.isError, false);
+  assert.match(continued.content[0].text, /architecture/);
+
+  const artifact = await callDevCrewTool("devcrew_artifact", {
+    cwd,
+    name: "architecture",
+  });
+  assert.equal(artifact.isError, false);
+  assert.match(artifact.content[0].text, /Architecture/);
+});
+
+test("devcrew_start infers host from DEVCREW_HOST when host is omitted", async () => {
+  const cwd = await tempProject();
+  const previous = process.env.DEVCREW_HOST;
+  process.env.DEVCREW_HOST = "claude";
+  try {
+    const start = await callDevCrewTool("devcrew_start", {
+      cwd,
+      mode: "feature",
+      request: "Infer host from environment",
+      backend: "local",
+    });
+
+    assert.equal(start.isError, false);
+    assert.equal((start.structuredContent?.state as { host: string }).host, "claude");
+  } finally {
+    if (previous === undefined) {
+      delete process.env.DEVCREW_HOST;
+    } else {
+      process.env.DEVCREW_HOST = previous;
+    }
+  }
 });
 
 test("devcrew_artifact exposes the implementation review artifact", () => {

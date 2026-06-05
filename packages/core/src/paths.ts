@@ -23,6 +23,10 @@ export function configPath(cwd: string): string {
   return join(devcrewDir(cwd), "config.json");
 }
 
+export function activeRunPath(cwd: string): string {
+  return join(devcrewDir(cwd), "active-run.json");
+}
+
 export function standardsPath(cwd: string): string {
   return join(devcrewDir(cwd), "standards.md");
 }

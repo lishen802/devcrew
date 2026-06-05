@@ -38,6 +38,7 @@ test("generateCodexPlugin writes a valid Codex plugin manifest and entry skill",
   const mcp = JSON.parse(await readFile(join(plugin.path, ".mcp.json"), "utf8"));
   assert.equal(mcp.mcpServers.devcrew.command, "npx");
   assert.deepEqual(mcp.mcpServers.devcrew.args, ["-y", "github:lishen802/devcrew", "serve", "--stdio"]);
+  assert.deepEqual(mcp.mcpServers.devcrew.env, { DEVCREW_HOST: "codex" });
 });
 
 test("generateCodexMarketplace writes a repo marketplace entry for plugin installation", async () => {
@@ -67,6 +68,7 @@ test("generateClaudePlugin writes a Claude plugin with agents and MCP config", a
 
   const mcp = JSON.parse(await readFile(join(plugin.path, ".mcp.json"), "utf8"));
   assert.equal(mcp.mcpServers.devcrew.command, "devcrew");
+  assert.deepEqual(mcp.mcpServers.devcrew.env, { DEVCREW_HOST: "claude" });
 });
 
 test("initProject creates config, standards placeholder, docs directory, and both plugin bundles", async () => {

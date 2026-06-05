@@ -70,6 +70,8 @@ Use DevCrew to plan and implement audit logging for the billing API.
 
 The agent should call `devcrew_start`, show the PM-generated requirements artifact, then wait for approval before moving to architecture. After each approval, `devcrew_continue` runs the next role and writes its Markdown artifact before opening the next gate.
 
+Plugins set `DEVCREW_HOST` for host detection, so `devcrew_start` can omit `host` unless you want to override it. DevCrew records the latest run as the repository's active run, so follow-up MCP calls can omit `runId`.
+
 By default DevCrew runs in `plan` mode. To allow the implementer/tester phases to make repository changes and run configured verification commands, explicitly request apply mode:
 
 ```text

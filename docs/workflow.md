@@ -24,6 +24,11 @@ approval.
 a gate, `devcrew_continue` runs the role for the next phase before setting that
 phase's gate to `pending`.
 
+`devcrew_start` records the created run as the active run for the repository.
+Subsequent MCP calls can omit `runId`; DevCrew resolves it from
+`.devcrew/active-run.json`. Plugin MCP configs set `DEVCREW_HOST`, so `host`
+can also be omitted unless the caller needs an explicit override.
+
 ## Gates
 
 Each main phase has a gate:
@@ -41,6 +46,12 @@ Runtime state is stored in:
 
 ```text
 .devcrew/runs/<run-id>/state.json
+```
+
+The active run pointer is stored in:
+
+```text
+.devcrew/active-run.json
 ```
 
 Reviewable artifacts are stored in:

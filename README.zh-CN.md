@@ -84,6 +84,8 @@ devcrew serve --stdio
 4. 需求确认后，`devcrew_continue` 会运行架构师角色，再依次进入实现计划和测试验收。
 5. 所有产物都会保存在 `docs/devcrew/<run-id>/`，方便审查和版本管理。
 
+插件会设置 `DEVCREW_HOST` 用于宿主识别，因此 `devcrew_start` 可以省略 `host`，除非你需要显式覆盖。DevCrew 会把最新 run 记录为当前仓库的 active run，后续 MCP 调用可以省略 `runId`。
+
 默认情况下 DevCrew 使用安全的 `plan` 模式。如果你希望 implementer/tester 阶段真正修改仓库并运行配置好的验证命令，需要明确要求 apply 模式：
 
 ```text

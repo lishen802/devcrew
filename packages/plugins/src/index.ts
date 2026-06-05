@@ -78,7 +78,7 @@ async function writeRoleAgents(root: string, format: "codex" | "claude"): Promis
 }
 
 function entrySkill(): string {
-  return `---\nname: devcrew\ndescription: Run the DevCrew PM -> architecture -> implementation -> testing workflow. Use when the user asks for structured feature or product development, requirements clarification, architecture review, implementation planning, testing acceptance, or Chinese requests such as 完整研发流程, 需求澄清, 产品经理, 架构师, 开发测试流程.\n---\n\nUse the DevCrew MCP tools to manage the workflow:\n\n1. Start with \`devcrew_start\` using the current repository cwd, host, mode, request, and optional executionMode. Omit executionMode unless the requester explicitly asks DevCrew to apply changes; the default safe mode is \`plan\`.\n2. Use \`executionMode: "apply"\` only when the requester explicitly wants DevCrew to write code or run validation commands. This still inherits host sandbox, approval, and tool permissions.\n3. Use \`devcrew_status\` to show the current phase and pending gate.\n4. Use \`devcrew_answer\` when the requester gives clarification.\n5. Use \`devcrew_approve\` or \`devcrew_reject\` for each gate.\n6. Use \`devcrew_continue\` after approvals. This executes the next phase role, writes the phase artifact, and opens the next gate. The implementation phase also writes \`implementation-review\` for diff and architecture compliance review.\n7. Use \`devcrew_artifact\` to read generated requirements, architecture, implementation-plan, implementation-review, test-report, or acceptance files.\n\nDo not bypass host sandbox, approval, or tool permissions.\n`;
+  return `---\nname: devcrew\ndescription: Run the DevCrew PM -> architecture -> implementation -> testing workflow. Use when the user asks for structured feature or product development, requirements clarification, architecture review, implementation planning, testing acceptance, or Chinese requests such as 完整研发流程, 需求澄清, 产品经理, 架构师, 开发测试流程.\n---\n\nUse the DevCrew MCP tools to manage the workflow:\n\n1. Start with \`devcrew_start\` using the current repository cwd, mode, request, and optional executionMode. Host is inferred from the plugin's \`DEVCREW_HOST\`; pass host only for an explicit override. Omit executionMode unless the requester explicitly asks DevCrew to apply changes; the default safe mode is \`plan\`.\n2. After start, DevCrew records the active run for this repository. For follow-up tools, omit runId unless you need to target a different run explicitly.\n3. Use \`executionMode: "apply"\` only when the requester explicitly wants DevCrew to write code or run validation commands. This still inherits host sandbox, approval, and tool permissions.\n4. Use \`devcrew_status\` to show the current phase and pending gate.\n5. Use \`devcrew_answer\` when the requester gives clarification.\n6. Use \`devcrew_approve\` or \`devcrew_reject\` for each gate.\n7. Use \`devcrew_continue\` after approvals. This executes the next phase role, writes the phase artifact, and opens the next gate. The implementation phase also writes \`implementation-review\` for diff and architecture compliance review.\n8. Use \`devcrew_artifact\` to read generated requirements, architecture, implementation-plan, implementation-review, test-report, or acceptance files.\n\nDo not bypass host sandbox, approval, or tool permissions.\n`;
 }
 
 export async function generateCodexPlugin(root: string): Promise<GeneratedPlugin> {
@@ -125,6 +125,7 @@ export async function generateCodexPlugin(root: string): Promise<GeneratedPlugin
       devcrew: {
         command: "npx",
         args: ["-y", "github:lishen802/devcrew", "serve", "--stdio"],
+        env: { DEVCREW_HOST: "codex" },
       },
     },
   });
@@ -174,6 +175,7 @@ export async function generateClaudePlugin(root: string): Promise<GeneratedPlugi
       devcrew: {
         command: "devcrew",
         args: ["serve", "--stdio"],
+        env: { DEVCREW_HOST: "claude" },
       },
     },
   });

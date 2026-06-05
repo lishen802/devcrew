@@ -156,12 +156,57 @@ type ClaudeQueryFn = (input: {
 
 export type ModuleLoader = (specifier: string) => Promise<Record<string, unknown>>;
 
+export const HOST_SDK_PACKAGES = {
+  codex: "@openai/codex-sdk",
+  claude: "@anthropic-ai/claude-agent-sdk",
+} as const satisfies Record<Exclude<BackendName, "local">, string>;
+
+export interface HostSdkResolution {
+  backend: BackendName;
+  packageName: string;
+  available: boolean;
+  error?: string;
+}
+
 // Dynamic import with a non-literal specifier so the optional host SDKs do not
 // need to be installed (or type-resolved) for DevCrew to build and run.
 const importOptional: ModuleLoader = async (specifier: string) => {
   const dynamicSpecifier: string = specifier;
   return (await import(dynamicSpecifier)) as Record<string, unknown>;
 };
+
+function sdkPackageName(backend: BackendName): string {
+  return backend === "local" ? "local" : HOST_SDK_PACKAGES[backend];
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function sdkResolutionHint(backend: BackendName, reason: string): string {
+  const packageName = sdkPackageName(backend);
+  if (backend === "local") {
+    return reason;
+  }
+  return `${reason}. DevCrew apply mode requires ${packageName} to be resolvable from the devcrew package. Reinstall DevCrew with optional dependencies enabled, for example: npm install -g devcrew --include=optional`;
+}
+
+export async function checkHostSdkResolution(
+  backend: BackendName,
+  deps: RunRoleDeps = {},
+): Promise<HostSdkResolution> {
+  const packageName = sdkPackageName(backend);
+  if (backend === "local") {
+    return { backend, packageName, available: true };
+  }
+  const loadModule = deps.loadModule ?? importOptional;
+  try {
+    await loadModule(packageName);
+    return { backend, packageName, available: true };
+  } catch (error) {
+    return { backend, packageName, available: false, error: errorMessage(error) };
+  }
+}
 
 // --- Pure, testable contract helpers ---------------------------------------
 
@@ -221,7 +266,7 @@ function claudeOptionsForRole(input: RoleRunInput): ClaudeQueryOptions {
 }
 
 async function runWithCodex(input: RoleRunInput, prompt: string, loadModule: ModuleLoader): Promise<string> {
-  const mod = await loadModule("@openai/codex-sdk");
+  const mod = await loadModule(HOST_SDK_PACKAGES.codex);
   const CodexClass = mod.Codex as CodexConstructor;
   const codex = new CodexClass();
   const thread = codex.startThread(buildCodexThreadOptions(input.cwd, codexSandboxForRole(input)));
@@ -230,7 +275,7 @@ async function runWithCodex(input: RoleRunInput, prompt: string, loadModule: Mod
 }
 
 async function runWithClaude(input: RoleRunInput, prompt: string, loadModule: ModuleLoader): Promise<string> {
-  const mod = await loadModule("@anthropic-ai/claude-agent-sdk");
+  const mod = await loadModule(HOST_SDK_PACKAGES.claude);
   const query = mod.query as ClaudeQueryFn;
   let resultMessage: ClaudeResultMessage | undefined;
   for await (const message of query({ prompt, options: claudeOptionsForRole(input) })) {
@@ -291,9 +336,11 @@ export async function runRole(input: RoleRunInput, deps: RunRoleDeps = {}): Prom
       usedFallback: false,
     };
   } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error);
+    const reason = errorMessage(error);
     if (shouldFailOnSdkError(input)) {
-      throw new Error(`Cannot run DevCrew apply mode with unavailable ${input.backend} SDK: ${reason}`);
+      throw new Error(
+        `Cannot run DevCrew apply mode with unavailable ${input.backend} SDK: ${sdkResolutionHint(input.backend, reason)}`,
+      );
     }
     return fallbackResult(
       input.role,

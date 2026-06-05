@@ -24,6 +24,7 @@ Run:
 
 ```bash
 devcrew init /path/to/repo
+devcrew doctor /path/to/repo
 ```
 
 The Codex plugin is generated at:
@@ -52,6 +53,12 @@ The DevCrew skill tells Codex to use these MCP tools:
 - `devcrew_artifact`
 
 Codex sandbox and approval settings remain authoritative. DevCrew does not bypass them.
+
+For apply mode, `@openai/codex-sdk` must be resolvable from the installed DevCrew package. Published DevCrew packages declare it as an optional dependency, which npm installs by default. If `devcrew doctor` reports it as missing, reinstall DevCrew with optional dependencies enabled:
+
+```bash
+npm install -g devcrew --include=optional
+```
 
 ## Marketplace smoke test
 

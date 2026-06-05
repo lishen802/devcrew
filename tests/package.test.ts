@@ -20,6 +20,8 @@ test("package metadata is ready for public npm publishing", async () => {
   assert.equal(pkg.scripts.prepack, "npm run build");
   assert.equal(pkg.scripts["smoke:codex-plugin"], "node scripts/smoke-codex-plugin.mjs");
   assert.equal(pkg.scripts.prepare, undefined);
+  assert.equal(pkg.optionalDependencies["@openai/codex-sdk"], "0.137.0");
+  assert.equal(pkg.optionalDependencies["@anthropic-ai/claude-agent-sdk"], "0.3.163");
   assert.ok(pkg.files.includes("dist/packages"));
   assert.ok(pkg.files.includes("plugins/devcrew-codex"));
   assert.ok(pkg.files.includes("scripts"));

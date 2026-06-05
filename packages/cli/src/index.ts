@@ -2,6 +2,7 @@
 import { access, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
+import { checkHostSdkResolution } from "../../adapters/src/index.js";
 import { DEVCREW_VERSION } from "../../core/src/index.js";
 import { initProject } from "../../plugins/src/index.js";
 import { runStdioServer } from "../../service/src/index.js";
@@ -23,10 +24,14 @@ async function doctor(cwd: string): Promise<void> {
   const config = resolve(cwd, ".devcrew", "config.json");
   const codex = resolve(cwd, "plugins", "devcrew-codex", ".codex-plugin", "plugin.json");
   const claude = resolve(cwd, "plugins", "devcrew-claude", ".claude-plugin", "plugin.json");
+  const codexSdk = await checkHostSdkResolution("codex");
+  const claudeSdk = await checkHostSdkResolution("claude");
   console.log(`Node: ${process.version}`);
   console.log(`Config: ${(await exists(config)) ? "ok" : "missing"}`);
   console.log(`Codex plugin: ${(await exists(codex)) ? "ok" : "missing"}`);
   console.log(`Claude plugin: ${(await exists(claude)) ? "ok" : "missing"}`);
+  console.log(`Codex SDK (${codexSdk.packageName}): ${codexSdk.available ? "ok" : `missing - ${codexSdk.error}`}`);
+  console.log(`Claude SDK (${claudeSdk.packageName}): ${claudeSdk.available ? "ok" : `missing - ${claudeSdk.error}`}`);
 }
 
 async function validate(cwd: string): Promise<void> {

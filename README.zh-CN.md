@@ -44,7 +44,10 @@ npx -y devcrew@0.1.0 serve --stdio
 ```bash
 npm install -g devcrew
 devcrew --version
+devcrew doctor /path/to/repo
 ```
+
+npm 包会把 Codex SDK 和 Claude Agent SDK 声明为 optional dependencies。npm 默认会安装 optional dependencies；如果你的环境跳过了它们，可以用 `npm install -g devcrew --include=optional` 重新安装。`devcrew doctor` 会检查 `@openai/codex-sdk` 和 `@anthropic-ai/claude-agent-sdk` 是否可解析，用于确认真实宿主后端的 `apply` 流程是否可用。
 
 ## 从源码安装
 
@@ -126,6 +129,8 @@ npm pack --dry-run
 ```
 
 当前适配器在未安装 Codex SDK 或 Claude SDK 时会使用确定性的本地 fallback 输出。这样可以保证测试和演示稳定，同时保留接入真实宿主 SDK 的边界。即使在 `apply` 模式下，DevCrew 仍然继承宿主的 sandbox、审批和工具权限。
+
+对于发布安装，宿主 SDK 包会作为精确锁定的 optional dependencies 随 DevCrew 一起安装，因此 `npx -y devcrew@<version>` 可以从 DevCrew 包自身解析这些 SDK。plan 模式仍允许 deterministic fallback；但 apply 模式在选定宿主 SDK 不可用时会直接失败，并给出明确的 SDK 解析错误。
 
 公开 npm 发布由 `npm publish` GitHub Actions 工作流处理。发布 GitHub Release 或手动触发 workflow 时，它会先运行验证，再执行 `npm pack --dry-run` 检查包内容，最后在配置 `NPM_TOKEN` 后使用 npm provenance 发布公开包。
 

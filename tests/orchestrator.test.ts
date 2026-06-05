@@ -92,20 +92,27 @@ test("continueOrchestratedWorkflow runs the phase role and writes its markdown a
 
 test("orchestrated SDK fallback artifacts include a warning and reason", async () => {
   const cwd = await tempProject();
+  const runner = async (input: RoleRunInput): Promise<RoleResult> => ({
+    role: input.role,
+    backend: input.backend,
+    summary: "Cannot find package @openai/codex-sdk",
+    markdown: "# Requirements\n\nFallback.",
+    usedFallback: true,
+  });
   const started = await startOrchestratedWorkflow({
     cwd,
     host: "codex",
     mode: "feature",
     request: "Add changelog generation",
     backend: "codex",
-  });
+  }, runner);
 
   const requirementsPath = started.artifacts.requirements;
   assert.ok(requirementsPath);
   const requirements = await readFile(requirementsPath, "utf8");
   assert.match(requirements, /DevCrew SDK fallback/);
   assert.match(requirements, /codex SDK was unavailable/);
-  assert.match(requirements, /Cannot find package|Cannot find module|module/);
+  assert.match(requirements, /Cannot find package @openai\/codex-sdk/);
 });
 
 test("continueOrchestratedWorkflow passes prior artifacts into the phase role", async () => {

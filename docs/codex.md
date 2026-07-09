@@ -13,7 +13,7 @@ Restart Codex, open the plugin directory, select the DevCrew marketplace, and in
 The plugin launches the MCP server with:
 
 ```bash
-npx -y devcrew@0.1.0 serve --stdio
+npx -y @shenlee/devcrew@0.1.0 serve --stdio
 ```
 
 Use this path when you want to use DevCrew without cloning the repository first. The version is locked to the published npm package that matches the plugin manifest.
@@ -57,7 +57,7 @@ Codex sandbox and approval settings remain authoritative. DevCrew does not bypas
 For apply mode, `@openai/codex-sdk` must be resolvable from the installed DevCrew package. Published DevCrew packages declare it as an optional dependency, which npm installs by default. If `devcrew doctor` reports it as missing, reinstall DevCrew with optional dependencies enabled:
 
 ```bash
-npm install -g devcrew --include=optional
+npm install -g @shenlee/devcrew --include=optional
 ```
 
 ## Marketplace smoke test
@@ -77,4 +77,4 @@ node scripts/smoke-codex-plugin.mjs --keep-temp
 node scripts/smoke-codex-plugin.mjs --source lishen802/devcrew --ref main
 ```
 
-The default path is intentionally production-like: it uses the GitHub marketplace and the version-locked npm package from the installed plugin. It requires network access, Codex CLI, Node.js, and a published `devcrew` npm version matching the plugin manifest.
+The default path is intentionally production-like: it uses the GitHub marketplace and the version-locked npm package from the installed plugin. It requires network access, Codex CLI, Node.js, and a published `@shenlee/devcrew` npm version matching the plugin manifest.

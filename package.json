@@ -1,5 +1,5 @@
 {
-  "name": "devcrew",
+  "name": "@shenlee/devcrew",
   "version": "0.1.0",
   "description": "Multi-host agent workflow service for Codex and Claude Code.",
   "type": "module",

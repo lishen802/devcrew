@@ -3,7 +3,7 @@ import { access, copyFile, mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { DEFAULT_CONFIG, DEVCREW_VERSION, ROLE_SECTIONS } from "../../core/src/index.js";
+import { DEFAULT_CONFIG, DEVCREW_NPM_PACKAGE, DEVCREW_VERSION, ROLE_SECTIONS } from "../../core/src/index.js";
 
 export interface GeneratedPlugin {
   name: "devcrew";
@@ -90,7 +90,7 @@ function entrySkill(): string {
 }
 
 function npmPackageSpecifier(): string {
-  return `devcrew@${DEVCREW_VERSION}`;
+  return `${DEVCREW_NPM_PACKAGE}@${DEVCREW_VERSION}`;
 }
 
 export async function generateCodexPlugin(root: string): Promise<GeneratedPlugin> {

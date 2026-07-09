@@ -34,7 +34,7 @@ Restart Codex, open the plugin directory, choose the DevCrew marketplace, and in
 The plugin starts the DevCrew MCP server with:
 
 ```bash
-npx -y devcrew@0.1.0 serve --stdio
+npx -y @shenlee/devcrew@0.1.0 serve --stdio
 ```
 
 The plugin locks the MCP server to the published npm package version, so users do not need to clone the source or build TypeScript at install time. You only need Node.js and network access the first time Codex starts the MCP server.
@@ -42,12 +42,12 @@ The plugin locks the MCP server to the published npm package version, so users d
 ## Install From npm
 
 ```bash
-npm install -g devcrew
+npm install -g @shenlee/devcrew
 devcrew --version
 devcrew doctor /path/to/repo
 ```
 
-The npm package declares the Codex and Claude Agent SDKs as optional dependencies. npm installs optional dependencies by default; if your environment omits them, reinstall with `npm install -g devcrew --include=optional`. `devcrew doctor` reports whether `@openai/codex-sdk` and `@anthropic-ai/claude-agent-sdk` are resolvable for real host-backed `apply` workflows.
+The npm package is published as `@shenlee/devcrew`, while the installed CLI command remains `devcrew`. It declares the Codex and Claude Agent SDKs as optional dependencies. npm installs optional dependencies by default; if your environment omits them, reinstall with `npm install -g @shenlee/devcrew --include=optional`. `devcrew doctor` reports whether `@openai/codex-sdk` and `@anthropic-ai/claude-agent-sdk` are resolvable for real host-backed `apply` workflows.
 
 ## Install From Source
 
@@ -116,7 +116,7 @@ npm pack --dry-run
 
 The SDK adapters use deterministic local fallback output when Codex or Claude SDK packages are not installed. This keeps local tests reliable while preserving the adapter boundary for real host integration. In `apply` mode, DevCrew still inherits the host sandbox and approval boundaries.
 
-For published installs, the host SDK packages are pinned optional dependencies so `npx -y devcrew@<version>` can resolve them from the DevCrew package itself. Plan mode can still fall back to deterministic artifacts, but apply mode fails with a clear SDK resolution error if the selected host SDK is unavailable.
+For published installs, the host SDK packages are pinned optional dependencies so `npx -y @shenlee/devcrew@<version>` can resolve them from the DevCrew package itself. Plan mode can still fall back to deterministic artifacts, but apply mode fails with a clear SDK resolution error if the selected host SDK is unavailable.
 
 Public npm publishing is handled by the `npm publish` GitHub Actions workflow. It runs validation, checks the package with `npm pack --dry-run`, and publishes with npm provenance when a GitHub Release is published or the workflow is manually dispatched with `NPM_TOKEN` configured.
 

@@ -8,7 +8,7 @@ import { DEVCREW_VERSION } from "../packages/core/src/index.js";
 test("package metadata is ready for public npm publishing", async () => {
   const pkg = JSON.parse(await readFile(join(process.cwd(), "package.json"), "utf8"));
 
-  assert.equal(pkg.name, "devcrew");
+  assert.equal(pkg.name, "@shenlee/devcrew");
   assert.equal(pkg.version, DEVCREW_VERSION);
   assert.equal(pkg.license, "Apache-2.0");
   assert.equal(pkg.publishConfig.access, "public");

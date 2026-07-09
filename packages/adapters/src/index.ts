@@ -1,4 +1,4 @@
-import { ROLE_SECTIONS } from "../../core/src/index.js";
+import { DEVCREW_NPM_PACKAGE, ROLE_SECTIONS } from "../../core/src/index.js";
 import type { ArtifactName, BackendName, ExecutionMode, Host, Phase, RoleResult, RunState, WorkflowMode } from "../../core/src/index.js";
 
 export interface BackendResolutionInput {
@@ -233,7 +233,7 @@ function sdkResolutionHint(backend: BackendName, reason: string): string {
   if (backend === "local") {
     return reason;
   }
-  return `${reason}. DevCrew apply mode requires ${packageName} to be resolvable from the devcrew package. Reinstall DevCrew with optional dependencies enabled, for example: npm install -g devcrew --include=optional`;
+  return `${reason}. DevCrew apply mode requires ${packageName} to be resolvable from the ${DEVCREW_NPM_PACKAGE} package. Reinstall DevCrew with optional dependencies enabled, for example: npm install -g ${DEVCREW_NPM_PACKAGE} --include=optional`;
 }
 
 export async function checkHostSdkResolution(

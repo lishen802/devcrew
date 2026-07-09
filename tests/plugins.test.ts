@@ -4,7 +4,7 @@ import { join } from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { DEVCREW_VERSION } from "../packages/core/src/index.js";
+import { DEVCREW_NPM_PACKAGE, DEVCREW_VERSION } from "../packages/core/src/index.js";
 import {
   generateCodexMarketplace,
   generateClaudePlugin,
@@ -37,7 +37,7 @@ test("generateCodexPlugin writes a valid Codex plugin manifest and entry skill",
 
   const mcp = JSON.parse(await readFile(join(plugin.path, ".mcp.json"), "utf8"));
   assert.equal(mcp.mcpServers.devcrew.command, "npx");
-  assert.deepEqual(mcp.mcpServers.devcrew.args, ["-y", `devcrew@${DEVCREW_VERSION}`, "serve", "--stdio"]);
+  assert.deepEqual(mcp.mcpServers.devcrew.args, ["-y", `${DEVCREW_NPM_PACKAGE}@${DEVCREW_VERSION}`, "serve", "--stdio"]);
   assert.deepEqual(mcp.mcpServers.devcrew.env, { DEVCREW_HOST: "codex" });
 });
 
@@ -45,7 +45,7 @@ test("checked-in Codex plugin locks MCP server to the published npm version", as
   const mcp = JSON.parse(await readFile(join(process.cwd(), "plugins", "devcrew-codex", ".mcp.json"), "utf8"));
 
   assert.equal(mcp.mcpServers.devcrew.command, "npx");
-  assert.deepEqual(mcp.mcpServers.devcrew.args, ["-y", `devcrew@${DEVCREW_VERSION}`, "serve", "--stdio"]);
+  assert.deepEqual(mcp.mcpServers.devcrew.args, ["-y", `${DEVCREW_NPM_PACKAGE}@${DEVCREW_VERSION}`, "serve", "--stdio"]);
   assert.deepEqual(mcp.mcpServers.devcrew.env, { DEVCREW_HOST: "codex" });
 });
 
@@ -76,7 +76,7 @@ test("generateClaudePlugin writes a Claude plugin with agents and MCP config", a
 
   const mcp = JSON.parse(await readFile(join(plugin.path, ".mcp.json"), "utf8"));
   assert.equal(mcp.mcpServers.devcrew.command, "npx");
-  assert.deepEqual(mcp.mcpServers.devcrew.args, ["-y", `devcrew@${DEVCREW_VERSION}`, "serve", "--stdio"]);
+  assert.deepEqual(mcp.mcpServers.devcrew.args, ["-y", `${DEVCREW_NPM_PACKAGE}@${DEVCREW_VERSION}`, "serve", "--stdio"]);
   assert.deepEqual(mcp.mcpServers.devcrew.env, { DEVCREW_HOST: "claude" });
 });
 

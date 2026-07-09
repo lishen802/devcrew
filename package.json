@@ -21,7 +21,7 @@
     "plugin"
   ],
   "bin": {
-    "devcrew": "./dist/packages/cli/src/index.js"
+    "devcrew": "dist/packages/cli/src/index.js"
   },
   "files": [
     "dist/packages",

@@ -80,6 +80,23 @@ function implementationDiffBlock(state: RunState): string {
   return `\`\`\`diff\n${diff}\n\`\`\``;
 }
 
+function architectureComplianceInputsBlock(state: RunState): string {
+  const architectureArtifact = state.artifacts.architecture ? "present" : "missing";
+  const diffStatus = state.implementationDiff.trim() ? "present" : "missing";
+  return [
+    `- Architecture Artifact: ${architectureArtifact}${state.artifacts.architecture ? ` (${state.artifacts.architecture})` : ""}`,
+    `- Changed Files: ${state.changedFiles.length}`,
+    `- Captured Diff: ${diffStatus}`,
+  ].join("\n");
+}
+
+function architectureComplianceStatus(state: RunState): string {
+  if (state.changedFiles.length === 0 && !state.implementationDiff.trim()) {
+    return "No implementation changes detected";
+  }
+  return "Needs Human Review";
+}
+
 export function renderArtifact(name: ArtifactName, state: RunState): string {
   const title = headingForArtifact(name);
   const common = `# ${title}\n\nRun: ${state.runId}\nMode: ${state.mode}\nExecution Mode: ${state.executionMode}\nHost: ${state.host}\nBackend: ${state.backend}\nRequest: ${state.request}\n\n`;
@@ -97,7 +114,7 @@ export function renderArtifact(name: ArtifactName, state: RunState): string {
   }
 
   if (name === "implementation-review") {
-    return `${common}${workflowContextBlock(state)}\n## Implementation Diff Review\n\n### Changed Files\n\n${changedFilesBlock(state)}\n\n### Captured Diff\n\n${implementationDiffBlock(state)}\n\n## Lint Results\n\n${lintResultsBlock(state)}\n\n## Architecture Compliance Review\n\n- Confirm changed files map back to the approved architecture artifact.\n- Confirm public interfaces, data flow, and deployment assumptions remain consistent with the architecture.\n- Confirm implementation scope does not include unapproved requirements or unrelated refactors.\n- Record any mismatch as rejection feedback before approving the implementation gate.\n`;
+    return `${common}${workflowContextBlock(state)}\n## Implementation Diff Review\n\n### Changed Files\n\n${changedFilesBlock(state)}\n\n### Captured Diff\n\n${implementationDiffBlock(state)}\n\n## Lint Results\n\n${lintResultsBlock(state)}\n\n## Architecture Compliance Inputs\n\n${architectureComplianceInputsBlock(state)}\n\n## Architecture Compliance Review\n\nStatus: ${architectureComplianceStatus(state)}\n\n- Confirm changed files map back to the approved architecture artifact.\n- Confirm public interfaces, data flow, and deployment assumptions remain consistent with the architecture.\n- Confirm implementation scope does not include unapproved requirements or unrelated refactors.\n- Record any mismatch as rejection feedback before approving the implementation gate.\n`;
   }
 
   if (name === "test-report") {

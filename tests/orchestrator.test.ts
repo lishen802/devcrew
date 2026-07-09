@@ -30,7 +30,7 @@ async function initGitRepo(cwd: string): Promise<void> {
   await execFileAsync("git", ["config", "user.email", "devcrew@example.test"], { cwd });
   await execFileAsync("git", ["config", "user.name", "DevCrew Test"], { cwd });
   await writeFile(join(cwd, "README.md"), "# Test Project\n");
-  await execFileAsync("git", ["add", "README.md"], { cwd });
+  await execFileAsync("git", ["add", "."], { cwd });
   await execFileAsync("git", ["commit", "-m", "Initial commit"], { cwd });
 }
 
@@ -48,6 +48,8 @@ test("startOrchestratedWorkflow runs the PM role before opening the requirements
   assert.equal(started.phase, "requirements");
   assert.equal(started.status, "awaiting_approval");
   assert.equal(started.gates.requirements, "pending");
+  assert.equal(started.roles.at(-2)?.role, "conductor");
+  assert.match(started.roles.at(-2)?.summary ?? "", /requirements phase to pm/i);
   assert.equal(started.roles.at(-1)?.role, "pm");
   assert.equal(started.roles.at(-1)?.usedFallback, true);
   assert.match(started.roles.at(-1)?.summary ?? "", /deterministic/);
@@ -78,6 +80,8 @@ test("continueOrchestratedWorkflow runs the phase role and writes its markdown a
   assert.equal(continued.phase, "architecture");
   assert.equal(continued.status, "awaiting_approval");
   assert.equal(continued.gates.architecture, "pending");
+  assert.equal(continued.roles.at(-2)?.role, "conductor");
+  assert.match(continued.roles.at(-2)?.summary ?? "", /architecture phase to architect/i);
   assert.equal(continued.roles.at(-1)?.role, "architect");
   assert.equal(continued.roles.at(-1)?.backend, "local");
   assert.equal(continued.roles.at(-1)?.usedFallback, true);
@@ -259,15 +263,21 @@ test("implementation phase writes an architecture compliance diff review", async
   assert.match(implemented.implementationDiff, /Implemented architecture details/);
   const review = await readFile(implemented.artifacts["implementation-review"] ?? "", "utf8");
   assert.match(review, /Implementation Diff Review/);
+  assert.match(review, /Architecture Compliance Inputs/);
+  assert.match(review, /Architecture Artifact: present/);
+  assert.match(review, /Changed Files: 1/);
+  assert.match(review, /Captured Diff: present/);
   assert.match(review, /Architecture Compliance Review/);
+  assert.match(review, /Needs Human Review/);
   assert.match(review, /M README\.md/);
   assert.match(review, /Implemented architecture details/);
 });
 
-test("apply mode tester runs configured verification commands and writes acceptance evidence", async () => {
+test("apply mode tester runs configured verification and coverage commands", async () => {
   const cwd = await tempProject();
   await mkdir(join(cwd, ".devcrew"), { recursive: true });
-  const command = `${process.execPath} -e "console.log('devcrew-verify-ok')"`;
+  const verifyCommand = `${process.execPath} -e "console.log('devcrew-verify-ok')"`;
+  const coverageCommand = `${process.execPath} -e "console.log('devcrew-coverage-ok')"`;
   await writeFile(
     join(cwd, ".devcrew", "config.json"),
     `${JSON.stringify({
@@ -278,9 +288,11 @@ test("apply mode tester runs configured verification commands and writes accepta
         gates: ["requirements", "architecture", "implementation", "testing"],
         artifactDirectory: "docs/devcrew",
       },
-      verifyCommands: [command],
+      verifyCommands: [verifyCommand],
+      coverageCommands: [coverageCommand],
     }, null, 2)}\n`,
   );
+  await initGitRepo(cwd);
 
   const started = await startOrchestratedWorkflow({
     cwd,
@@ -296,17 +308,21 @@ test("apply mode tester runs configured verification commands and writes accepta
 
   const tested = await continueOrchestratedWorkflow({ cwd, runId: started.runId });
 
-  assert.equal(tested.verification?.at(-1)?.exitCode, 0);
-  assert.match(tested.verification?.at(-1)?.output ?? "", /devcrew-verify-ok/);
+  assert.deepEqual(tested.verification.map((result) => result.command), [verifyCommand, coverageCommand]);
+  assert.equal(tested.verification[0]?.exitCode, 0);
+  assert.match(tested.verification[0]?.output ?? "", /devcrew-verify-ok/);
+  assert.equal(tested.verification[1]?.exitCode, 0);
+  assert.match(tested.verification[1]?.output ?? "", /devcrew-coverage-ok/);
   const testReportPath = tested.artifacts["test-report"];
   assert.ok(testReportPath);
   const testReport = await readFile(testReportPath, "utf8");
   assert.match(testReport, /Acceptance Evidence/);
   assert.match(testReport, /devcrew-verify-ok/);
+  assert.match(testReport, /devcrew-coverage-ok/);
   assert.match(testReport, /Exit Code: 0/);
 });
 
-test("apply mode tester discovers package verification commands when none are configured", async () => {
+test("apply mode tester discovers package verification and coverage commands when none are configured", async () => {
   const cwd = await tempProject();
   await mkdir(join(cwd, ".devcrew"), { recursive: true });
   await writeFile(
@@ -327,9 +343,11 @@ test("apply mode tester discovers package verification commands when none are co
     JSON.stringify({
       scripts: {
         test: `${process.execPath} -e "console.log('auto-npm-test-ok')"`,
+        coverage: `${process.execPath} -e "console.log('auto-npm-coverage-ok')"`,
       },
     }),
   );
+  await initGitRepo(cwd);
 
   const started = await startOrchestratedWorkflow({
     cwd,
@@ -345,9 +363,47 @@ test("apply mode tester discovers package verification commands when none are co
 
   const tested = await continueOrchestratedWorkflow({ cwd, runId: started.runId });
 
-  assert.equal(tested.verification?.at(-1)?.command, "npm test");
-  assert.equal(tested.verification?.at(-1)?.exitCode, 0);
-  assert.match(tested.verification?.at(-1)?.output ?? "", /auto-npm-test-ok/);
+  assert.deepEqual(tested.verification.map((result) => result.command), ["npm test", "npm run coverage"]);
+  assert.equal(tested.verification[0]?.exitCode, 0);
+  assert.match(tested.verification[0]?.output ?? "", /auto-npm-test-ok/);
+  assert.equal(tested.verification[1]?.exitCode, 0);
+  assert.match(tested.verification[1]?.output ?? "", /auto-npm-coverage-ok/);
+});
+
+test("apply mode implementation refuses to run on a dirty user working tree", async () => {
+  const cwd = await tempProject();
+  await initGitRepo(cwd);
+
+  const started = await startOrchestratedWorkflow({
+    cwd,
+    host: "codex",
+    mode: "feature",
+    request: "Add a generated module",
+    backend: "local",
+    executionMode: "apply",
+  });
+  await approveWorkflow({ cwd, runId: started.runId, gate: "requirements" });
+  await continueOrchestratedWorkflow({ cwd, runId: started.runId });
+  await approveWorkflow({ cwd, runId: started.runId, gate: "architecture" });
+  await writeFile(join(cwd, "README.md"), "# User has local edits\n");
+
+  let runnerCalled = false;
+  const runner = async (input: RoleRunInput): Promise<RoleResult> => {
+    runnerCalled = true;
+    return {
+      role: input.role,
+      backend: input.backend,
+      summary: `${input.role} completed`,
+      markdown: `# ${input.role}\n\nDone.\n`,
+      usedFallback: false,
+    };
+  };
+
+  await assert.rejects(
+    () => continueOrchestratedWorkflow({ cwd, runId: started.runId }, runner),
+    /clean working tree.*README\.md/i,
+  );
+  assert.equal(runnerCalled, false);
 });
 
 test("changedSinceBaseline excludes pre-existing uncommitted edits", () => {

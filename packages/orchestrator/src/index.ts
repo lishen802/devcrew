@@ -45,6 +45,17 @@ function roleForPhase(phase: Phase): RoleResult["role"] | undefined {
   return roles[phase];
 }
 
+function conductorDecision(state: RunState, role: RoleResult["role"], gate: string): RoleResult {
+  const summary = `Conductor routed ${state.phase} phase to ${role} and prepared the ${gate} gate.`;
+  return {
+    role: "conductor",
+    backend: state.backend,
+    summary,
+    markdown: `# Conductor Decision\n\n${summary}\n`,
+    usedFallback: false,
+  };
+}
+
 function priorArtifactNamesForPhase(phase: Phase): ArtifactName[] {
   const current = artifactForPhase(phase);
   const currentIndex = ARTIFACTS.indexOf(current);
@@ -72,7 +83,10 @@ function fallbackNotice(result: RoleResult): string {
   if (result.backend === "local") {
     return `> DevCrew local fallback: this artifact uses the deterministic local planning template because the local backend does not call an external SDK.\n\n`;
   }
-  return `> DevCrew SDK fallback: this artifact uses the deterministic planning template because the ${result.backend} SDK was unavailable.\n> Reason: ${result.summary}\n\n`;
+  const reason = result.summary.includes("output failed validation")
+    ? `the ${result.backend} SDK did not return a valid artifact`
+    : `the ${result.backend} SDK was unavailable`;
+  return `> DevCrew SDK fallback: this artifact uses the deterministic planning template because ${reason}.\n> Reason: ${result.summary}\n\n`;
 }
 
 async function readPriorArtifacts(state: RunState): Promise<Record<string, string>> {
@@ -161,9 +175,12 @@ async function runGit(args: string[], cwd: string): Promise<{ exitCode: number; 
   });
 }
 
-async function listChangedLines(cwd: string): Promise<string[]> {
+async function listChangedLines(cwd: string, options: { requireGit?: boolean } = {}): Promise<string[]> {
   const result = await runShellCommand("git status --porcelain -uall", cwd, 30_000);
   if (result.exitCode !== 0) {
+    if (options.requireGit) {
+      throw new Error("DevCrew apply mode requires a git repository so implementation changes can be reviewed and reverted.");
+    }
     return [];
   }
   return result.output
@@ -174,6 +191,18 @@ async function listChangedLines(cwd: string): Promise<string[]> {
       const path = line.slice(3);
       return !path.startsWith(".devcrew/") && !path.startsWith("docs/devcrew/");
     });
+}
+
+async function assertCleanApplyWorkspace(cwd: string): Promise<void> {
+  const changedLines = await listChangedLines(cwd, { requireGit: true });
+  if (changedLines.length === 0) {
+    return;
+  }
+  const visibleLines = changedLines.slice(0, 20).join(", ");
+  const suffix = changedLines.length > 20 ? `, and ${changedLines.length - 20} more` : "";
+  throw new Error(
+    `DevCrew apply mode requires a clean working tree before implementation. Commit, stash, or remove these files: ${visibleLines}${suffix}`,
+  );
 }
 
 async function collectImplementationDiff(cwd: string): Promise<string> {
@@ -248,24 +277,29 @@ async function runCommands(commands: string[], cwd: string): Promise<Verificatio
   return results;
 }
 
-// Tester verification command priority:
-//   1. configured verifyCommands (backward-compatible; coverageCommands is
-//      skipped when this is set)
-//   2. configured coverageCommands
-//   3. discovered coverage commands (npm coverage / jest --coverage / pytest --cov / go test -cover)
-//   4. discovered verify commands (npm validate / npm test / go test / cargo test / pytest)
+function uniqueCommands(commands: string[]): string[] {
+  const seen = new Set<string>();
+  const unique: string[] = [];
+  for (const command of commands) {
+    if (seen.has(command)) {
+      continue;
+    }
+    seen.add(command);
+    unique.push(command);
+  }
+  return unique;
+}
+
+// Tester verification runs the normal verification path first, then coverage
+// as supplemental evidence. Configured commands win per category; otherwise
+// DevCrew discovers common project commands.
 async function runConfiguredVerification(state: RunState): Promise<VerificationResult[]> {
   const config = await readConfig(state.cwd);
   const configuredVerify = config.verifyCommands.filter((command) => command.trim().length > 0);
-  if (configuredVerify.length > 0) {
-    return runCommands(configuredVerify, state.cwd);
-  }
   const configuredCoverage = (config.coverageCommands ?? []).filter((command) => command.trim().length > 0);
-  if (configuredCoverage.length > 0) {
-    return runCommands(configuredCoverage, state.cwd);
-  }
-  const discoveredCoverage = await discoverCoverageCommands(state.cwd);
-  const commands = discoveredCoverage.length > 0 ? discoveredCoverage : await discoverVerifyCommands(state.cwd);
+  const verifyCommands = configuredVerify.length > 0 ? configuredVerify : await discoverVerifyCommands(state.cwd);
+  const coverageCommands = configuredCoverage.length > 0 ? configuredCoverage : await discoverCoverageCommands(state.cwd);
+  const commands = uniqueCommands([...verifyCommands, ...coverageCommands]);
   return runCommands(commands, state.cwd);
 }
 
@@ -336,10 +370,15 @@ async function runCurrentPhaseRole(state: RunState, runner: RoleRunner = runRole
   const artifact = artifactForPhase(state.phase);
   const path = artifactPath(state.cwd, state.runId, artifact);
 
-  // Snapshot the working tree before an apply-mode implementer runs so the
-  // changed-files list reflects only this run's edits.
+  // Apply-mode implementation starts from a clean tree, so changed files after
+  // the role runs are attributable to the current DevCrew run.
   const applyingImplementation = state.executionMode === "apply" && state.phase === "implementation";
-  const implementationBaseline = applyingImplementation ? await listChangedLines(state.cwd) : [];
+  const implementationBaseline: string[] = [];
+  if (applyingImplementation) {
+    await assertCleanApplyWorkspace(state.cwd);
+  }
+
+  state.roles.push(conductorDecision(state, role, gate));
 
   const result = await runner({
     backend: state.backend,

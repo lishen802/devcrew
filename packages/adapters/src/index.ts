@@ -34,10 +34,39 @@ export function roleGuidance(role: RoleResult["role"]): string[] {
   if (!sections || sections.length === 0) {
     return [];
   }
-  return [
-    "Produce these exact H2 sections:",
-    ...sections.map((s) => `## ${s.heading} - ${s.description}.`),
-  ];
+  const lines = ["Produce these exact H2 sections:"];
+  for (const section of sections) {
+    lines.push(`## ${section.heading}`, `Guidance: ${section.description}.`);
+  }
+  return lines;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+export function missingRoleSections(role: RoleResult["role"], markdown: string): string[] {
+  const sections = ROLE_SECTIONS[role as keyof typeof ROLE_SECTIONS];
+  if (!sections || sections.length === 0) {
+    return [];
+  }
+  return sections
+    .map((section) => section.heading)
+    .filter((heading) => !new RegExp(`^##\\s+${escapeRegExp(heading)}\\s*$`, "imu").test(markdown));
+}
+
+export class RoleOutputValidationError extends Error {
+  constructor(role: RoleResult["role"], missingSections: string[]) {
+    super(`DevCrew ${role} output is missing required sections: ${missingSections.join(", ")}`);
+    this.name = "RoleOutputValidationError";
+  }
+}
+
+export function assertRoleSections(role: RoleResult["role"], markdown: string): void {
+  const missingSections = missingRoleSections(role, markdown);
+  if (missingSections.length > 0) {
+    throw new RoleOutputValidationError(role, missingSections);
+  }
 }
 
 export function renderRolePrompt(input: Omit<RoleRunInput, "backend" | "cwd">): string {
@@ -344,6 +373,7 @@ export async function runRole(input: RoleRunInput, deps: RunRoleDeps = {}): Prom
       input.backend === "codex"
         ? await runWithCodex(input, prompt, loadModule)
         : await runWithClaude(input, prompt, loadModule);
+    assertRoleSections(input.role, markdown);
     return {
       role: input.role,
       backend: input.backend,
@@ -354,15 +384,21 @@ export async function runRole(input: RoleRunInput, deps: RunRoleDeps = {}): Prom
   } catch (error) {
     const reason = errorMessage(error);
     if (shouldFailOnSdkError(input)) {
+      if (error instanceof RoleOutputValidationError) {
+        throw new Error(`DevCrew apply mode rejected invalid ${input.role} SDK output: ${reason}`);
+      }
       throw new Error(
         `Cannot run DevCrew apply mode with unavailable ${input.backend} SDK: ${sdkResolutionHint(input.backend, reason)}`,
       );
     }
+    const fallbackReason = error instanceof RoleOutputValidationError
+      ? `the ${input.backend} SDK output failed validation: ${reason}`
+      : `the ${input.backend} SDK was unavailable: ${reason}`;
     return fallbackResult(
       input.role,
       input.backend,
       title,
-      `${input.role} prepared a deterministic ${title} fallback because the ${input.backend} SDK was unavailable: ${reason}`,
+      `${input.role} prepared a deterministic ${title} fallback because ${fallbackReason}`,
     );
   }
 }

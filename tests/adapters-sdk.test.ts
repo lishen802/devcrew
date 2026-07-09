@@ -24,6 +24,68 @@ const baseInput: Omit<RoleRunInput, "backend"> = {
   artifactPath: "docs/devcrew/dc-demo/architecture.md",
 };
 
+const architectureMarkdown = [
+  "# Architecture",
+  "",
+  "## Technical Decisions",
+  "",
+  "Use the existing service boundary.",
+  "",
+  "## Interface Contracts",
+  "",
+  "Expose a focused workflow API.",
+  "",
+  "## Data Flow and Deployment",
+  "",
+  "Persist artifacts locally.",
+  "",
+  "## Architecture Review Checklist",
+  "",
+  "- Trace decisions to requirements.",
+].join("\n");
+
+const implementationMarkdown = [
+  "# Implementation Plan",
+  "",
+  "## Implementation Summary",
+  "",
+  "Make the smallest approved change.",
+  "",
+  "## Standards Compliance",
+  "",
+  "Run lint and tests.",
+  "",
+  "## Changed Files",
+  "",
+  "- generated.ts",
+  "",
+  "## Tests Added or Updated",
+  "",
+  "- tests cover the change.",
+].join("\n");
+
+const testReportMarkdown = [
+  "# Test Report",
+  "",
+  "## Test Cases",
+  "",
+  "| ID | Scenario | Type | Expected |",
+  "| --- | --- | --- | --- |",
+  "| TC-1 | Primary path | happy | Passes |",
+  "",
+  "## Coverage",
+  "",
+  "Coverage command executed.",
+  "",
+  "## Verification Evidence",
+  "",
+  "npm test exited 0.",
+  "",
+  "## Known Risks",
+  "",
+  "No known residual risk.",
+].join("\n");
+
 // --- Pure contract helpers --------------------------------------------------
 
 test("buildCodexThreadOptions pins the read-only sandbox contract", () => {
@@ -62,7 +124,7 @@ test("runRole gives implementer a writable Codex sandbox only in apply mode", as
         return {
           run: async (prompt: string) => {
             receivedPrompt = prompt;
-            return { finalResponse: "# Implementation\n\nChanged files.", items: [], usage: null };
+            return { finalResponse: implementationMarkdown, items: [], usage: null };
           },
         };
       }
@@ -109,7 +171,7 @@ test("runRole gives tester Bash access through Claude only in apply mode", async
       receivedPrompt = prompt;
       receivedOptions = options;
       async function* stream(): AsyncGenerator<ClaudeMessage> {
-        yield { type: "result", subtype: "success", result: "# Test Report\n\nExecuted tests.", is_error: false };
+        yield { type: "result", subtype: "success", result: testReportMarkdown, is_error: false };
       }
       return stream();
     },
@@ -159,7 +221,7 @@ test("runRole drives the Codex SDK with the pinned thread options and returns fi
           return {
             run: async (prompt: string) => {
               receivedPrompt = prompt;
-              return { finalResponse: "# Architecture\n\nReal SDK output.", items: [], usage: null };
+              return { finalResponse: `${architectureMarkdown}\n\nReal SDK output.`, items: [], usage: null };
             },
           };
         }
@@ -205,7 +267,7 @@ test("runRole drives the Claude SDK with the pinned query options and returns th
         receivedOptions = options;
         async function* stream(): AsyncGenerator<ClaudeMessage> {
           yield { type: "assistant" };
-          yield { type: "result", subtype: "success", result: "# Architecture\n\nClaude output.", is_error: false };
+          yield { type: "result", subtype: "success", result: `${architectureMarkdown}\n\nClaude output.`, is_error: false };
         }
         return stream();
       },

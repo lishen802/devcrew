@@ -174,7 +174,12 @@ test("implementation review artifact summarizes diff and architecture compliance
   const artifact = await getArtifact({ cwd, runId: state.runId, name: "implementation-review" });
 
   assert.match(artifact.content, /Implementation Diff Review/);
+  assert.match(artifact.content, /Architecture Compliance Inputs/);
+  assert.match(artifact.content, /Architecture Artifact: missing/);
+  assert.match(artifact.content, /Changed Files: 1/);
+  assert.match(artifact.content, /Captured Diff: present/);
   assert.match(artifact.content, /Architecture Compliance Review/);
+  assert.match(artifact.content, /Needs Human Review/);
   assert.match(artifact.content, /M README\.md/);
   assert.match(artifact.content, /Implemented billing exports/);
 });
@@ -292,7 +297,10 @@ test("discoverLintCommands discovers Python ruff and black", async () => {
 test("discoverLintCommands discovers Go and Rust lint commands", async () => {
   const goProject = await tempProject();
   await writeFile(join(goProject, "go.mod"), "module example.com/demo\n");
-  assert.deepEqual(await discoverLintCommands(goProject), ["gofmt -l .", "go vet ./..."]);
+  assert.deepEqual(await discoverLintCommands(goProject), [
+    "files=$(gofmt -l .) && test -z \"$files\" || { printf '%s\\n' \"$files\"; exit 1; }",
+    "go vet ./...",
+  ]);
 
   const cargoProject = await tempProject();
   await writeFile(join(cargoProject, "Cargo.toml"), "[package]\nname = \"demo\"\n");

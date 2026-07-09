@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   checkHostSdkResolution,
   HOST_SDK_PACKAGES,
+  missingRoleSections,
   renderRolePrompt,
   resolveBackendName,
   roleGuidance,
@@ -139,13 +140,83 @@ test("roleGuidance returns structured H2 sections for each role", () => {
     const guidance = roleGuidance(role);
     assert.ok(guidance.length > 0, `roleGuidance should return sections for ${role}`);
     assert.match(guidance[0], /Produce these exact H2 sections:/);
-    // Every section line after the first must start with ## (H2 heading).
-    for (const line of guidance.slice(1)) {
+    const headings = guidance.filter((line) => line.startsWith("## "));
+    assert.ok(headings.length > 0, `roleGuidance should include H2 headings for ${role}`);
+    // H2 lines must contain only the exact heading. Descriptions belong on
+    // separate guidance lines so generated markdown can be validated reliably.
+    for (const line of headings) {
       assert.match(line, /^## /);
+      assert.doesNotMatch(line, / - /);
     }
   }
 });
 
 test("roleGuidance returns empty for conductor and unknown roles", () => {
   assert.deepEqual(roleGuidance("conductor"), []);
+});
+
+test("missingRoleSections reports SDK markdown that omits required H2 headings", () => {
+  assert.deepEqual(
+    missingRoleSections(
+      "architect",
+      [
+        "# Architecture",
+        "",
+        "## Technical Decisions",
+        "",
+        "Use the existing service boundary.",
+      ].join("\n"),
+    ),
+    ["Interface Contracts", "Data Flow and Deployment", "Architecture Review Checklist"],
+  );
+});
+
+test("runRole falls back in plan mode when SDK output misses required sections", async () => {
+  const loadModule: ModuleLoader = async () => ({
+    Codex: class {
+      startThread() {
+        return { run: async () => ({ finalResponse: "# Architecture\n\nNo required H2 sections." }) };
+      }
+    },
+  });
+
+  const result = await runRole({
+    backend: "codex",
+    role: "architect",
+    phase: "architecture",
+    request: "Add billing export",
+    mode: "feature",
+    cwd: process.cwd(),
+    standards: "Use TypeScript strict mode.",
+    artifactPath: "docs/devcrew/dc-demo/architecture.md",
+  }, { loadModule });
+
+  assert.equal(result.usedFallback, true);
+  assert.match(result.summary, /missing required sections/i);
+});
+
+test("runRole fails apply mode when SDK output misses required sections", async () => {
+  const loadModule: ModuleLoader = async () => ({
+    Codex: class {
+      startThread() {
+        return { run: async () => ({ finalResponse: "# Implementation\n\nNo required H2 sections." }) };
+      }
+    },
+  });
+
+  await assert.rejects(
+    () =>
+      runRole({
+        backend: "codex",
+        role: "implementer",
+        phase: "implementation",
+        request: "Change repository files",
+        mode: "feature",
+        executionMode: "apply",
+        cwd: process.cwd(),
+        standards: "Run npm test.",
+        artifactPath: "docs/devcrew/dc-demo/implementation-plan.md",
+      }, { loadModule }),
+    /missing required sections/i,
+  );
 });

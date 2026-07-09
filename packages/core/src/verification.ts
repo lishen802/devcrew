@@ -121,7 +121,7 @@ export async function discoverLintCommands(cwd: string): Promise<string[]> {
     }
   }
   if (await exists(join(cwd, "go.mod"))) {
-    return ["gofmt -l .", "go vet ./..."];
+    return ["files=$(gofmt -l .) && test -z \"$files\" || { printf '%s\\n' \"$files\"; exit 1; }", "go vet ./..."];
   }
   if (await exists(join(cwd, "Cargo.toml"))) {
     return ["cargo fmt --check", "cargo clippy"];

@@ -221,7 +221,7 @@ test("loadState migrates missing lintResults to empty array", async () => {
 });
 
 test("core exports the shared DevCrew version", () => {
-  assert.equal(DEVCREW_VERSION, "0.1.0");
+  assert.equal(DEVCREW_VERSION, "0.1.1");
 });
 
 test("discoverStandards prefers explicit DevCrew standards and includes project conventions", async () => {

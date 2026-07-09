@@ -1,10 +1,17 @@
 {
   "mcpServers": {
     "devcrew": {
-      "command": "npx",
+      "command": "npm",
       "args": [
-        "-y",
-        "@shenlee/devcrew@0.1.0",
+        "exec",
+        "--silent",
+        "--yes",
+        "--package=@shenlee/devcrew@0.1.1",
+        "--",
+        "node",
+        "-e",
+        "const path = require('node:path'); const { pathToFileURL } = require('node:url'); const binDir = process.env.PATH.split(path.delimiter)[0]; const packageRoot = path.join(binDir.replace(/[\\\\/]\\.bin$/u, ''), \"@shenlee\", \"devcrew\"); process.argv = ['node', 'devcrew', ...process.argv.slice(1)]; import(pathToFileURL(path.join(packageRoot, 'dist/packages/cli/src/index.js')).href);",
+        "--",
         "serve",
         "--stdio"
       ],

@@ -13,7 +13,7 @@ Restart Codex, open the plugin directory, select the DevCrew marketplace, and in
 The plugin launches the MCP server with:
 
 ```bash
-npx -y @shenlee/devcrew@0.1.0 serve --stdio
+npm exec --silent --yes --package=@shenlee/devcrew@0.1.1 -- node -e "<DevCrew CLI wrapper>" -- serve --stdio
 ```
 
 Use this path when you want to use DevCrew without cloning the repository first. The version is locked to the published npm package that matches the plugin manifest.

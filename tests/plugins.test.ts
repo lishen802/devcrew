@@ -16,6 +16,25 @@ async function tempProject(): Promise<string> {
   return mkdtemp(join(tmpdir(), "devcrew-plugins-"));
 }
 
+function assertVersionLockedMcpServer(mcp: {
+  mcpServers: { devcrew: { command: string; args: string[]; env: Record<string, string> } };
+}, host: "codex" | "claude"): void {
+  const server = mcp.mcpServers.devcrew;
+  assert.equal(server.command, "npm");
+  assert.deepEqual(server.args.slice(0, 5), [
+    "exec",
+    "--silent",
+    "--yes",
+    `--package=${DEVCREW_NPM_PACKAGE}@${DEVCREW_VERSION}`,
+    "--",
+  ]);
+  assert.equal(server.args[5], "node");
+  assert.equal(server.args[6], "-e");
+  assert.match(server.args[7], /dist\/packages\/cli\/src\/index\.js/);
+  assert.deepEqual(server.args.slice(8), ["--", "serve", "--stdio"]);
+  assert.deepEqual(server.env, { DEVCREW_HOST: host });
+}
+
 test("generateCodexPlugin writes a valid Codex plugin manifest and entry skill", async () => {
   const root = await tempProject();
   const plugin = await generateCodexPlugin(root);
@@ -36,17 +55,13 @@ test("generateCodexPlugin writes a valid Codex plugin manifest and entry skill",
   await stat(join(plugin.path, "assets", "composer-icon.png"));
 
   const mcp = JSON.parse(await readFile(join(plugin.path, ".mcp.json"), "utf8"));
-  assert.equal(mcp.mcpServers.devcrew.command, "npx");
-  assert.deepEqual(mcp.mcpServers.devcrew.args, ["-y", `${DEVCREW_NPM_PACKAGE}@${DEVCREW_VERSION}`, "serve", "--stdio"]);
-  assert.deepEqual(mcp.mcpServers.devcrew.env, { DEVCREW_HOST: "codex" });
+  assertVersionLockedMcpServer(mcp, "codex");
 });
 
 test("checked-in Codex plugin locks MCP server to the published npm version", async () => {
   const mcp = JSON.parse(await readFile(join(process.cwd(), "plugins", "devcrew-codex", ".mcp.json"), "utf8"));
 
-  assert.equal(mcp.mcpServers.devcrew.command, "npx");
-  assert.deepEqual(mcp.mcpServers.devcrew.args, ["-y", `${DEVCREW_NPM_PACKAGE}@${DEVCREW_VERSION}`, "serve", "--stdio"]);
-  assert.deepEqual(mcp.mcpServers.devcrew.env, { DEVCREW_HOST: "codex" });
+  assertVersionLockedMcpServer(mcp, "codex");
 });
 
 test("generateCodexMarketplace writes a repo marketplace entry for plugin installation", async () => {
@@ -75,9 +90,7 @@ test("generateClaudePlugin writes a Claude plugin with agents and MCP config", a
   assert.match(agent, /technical architecture/);
 
   const mcp = JSON.parse(await readFile(join(plugin.path, ".mcp.json"), "utf8"));
-  assert.equal(mcp.mcpServers.devcrew.command, "npx");
-  assert.deepEqual(mcp.mcpServers.devcrew.args, ["-y", `${DEVCREW_NPM_PACKAGE}@${DEVCREW_VERSION}`, "serve", "--stdio"]);
-  assert.deepEqual(mcp.mcpServers.devcrew.env, { DEVCREW_HOST: "claude" });
+  assertVersionLockedMcpServer(mcp, "claude");
 });
 
 test("initProject creates config, standards placeholder, docs directory, and both plugin bundles", async () => {

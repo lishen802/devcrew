@@ -298,7 +298,7 @@ async function main() {
       await client.request("initialize", {
         protocolVersion: "2025-03-26",
         capabilities: {},
-        clientInfo: { name: "devcrew-codex-plugin-smoke", version: "0.1.0" },
+        clientInfo: { name: "devcrew-codex-plugin-smoke", version: "0.1.1" },
       });
       client.notify("notifications/initialized", {});
       const tools = await client.request("tools/list", {});

@@ -93,6 +93,38 @@ function npmPackageSpecifier(): string {
   return `${DEVCREW_NPM_PACKAGE}@${DEVCREW_VERSION}`;
 }
 
+function npmExecCliWrapper(): string {
+  const [scope, name] = DEVCREW_NPM_PACKAGE.split("/");
+  return [
+    "const path = require('node:path');",
+    "const { pathToFileURL } = require('node:url');",
+    "const binDir = process.env.PATH.split(path.delimiter)[0];",
+    `const packageRoot = path.join(binDir.replace(/[\\\\/]\\.bin$/u, ''), ${JSON.stringify(scope)}, ${JSON.stringify(name)});`,
+    "process.argv = ['node', 'devcrew', ...process.argv.slice(1)];",
+    "import(pathToFileURL(path.join(packageRoot, 'dist/packages/cli/src/index.js')).href);",
+  ].join(" ");
+}
+
+function mcpServerConfig(host: "codex" | "claude"): unknown {
+  return {
+    command: "npm",
+    args: [
+      "exec",
+      "--silent",
+      "--yes",
+      `--package=${npmPackageSpecifier()}`,
+      "--",
+      "node",
+      "-e",
+      npmExecCliWrapper(),
+      "--",
+      "serve",
+      "--stdio",
+    ],
+    env: { DEVCREW_HOST: host },
+  };
+}
+
 export async function generateCodexPlugin(root: string): Promise<GeneratedPlugin> {
   const pluginRoot = join(root, "plugins", "devcrew-codex");
   await mkdir(join(pluginRoot, ".codex-plugin"), { recursive: true });
@@ -134,11 +166,7 @@ export async function generateCodexPlugin(root: string): Promise<GeneratedPlugin
   await writeFile(join(pluginRoot, "skills", "devcrew", "SKILL.md"), entrySkill(), "utf8");
   await writeJson(join(pluginRoot, ".mcp.json"), {
     mcpServers: {
-      devcrew: {
-        command: "npx",
-        args: ["-y", npmPackageSpecifier(), "serve", "--stdio"],
-        env: { DEVCREW_HOST: "codex" },
-      },
+      devcrew: mcpServerConfig("codex"),
     },
   });
   await writeRoleAgents(pluginRoot, "codex");
@@ -184,11 +212,7 @@ export async function generateClaudePlugin(root: string): Promise<GeneratedPlugi
   await writeFile(join(pluginRoot, "skills", "devcrew", "SKILL.md"), entrySkill(), "utf8");
   await writeJson(join(pluginRoot, ".mcp.json"), {
     mcpServers: {
-      devcrew: {
-        command: "npx",
-        args: ["-y", npmPackageSpecifier(), "serve", "--stdio"],
-        env: { DEVCREW_HOST: "claude" },
-      },
+      devcrew: mcpServerConfig("claude"),
     },
   });
   await writeRoleAgents(pluginRoot, "claude");

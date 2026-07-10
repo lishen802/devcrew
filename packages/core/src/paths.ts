@@ -15,6 +15,10 @@ export function runDir(cwd: string, runId: string): string {
   return join(runsDir(cwd), runId);
 }
 
+export function executionWorktreePath(cwd: string, runId: string): string {
+  return join(devcrewDir(cwd), "worktrees", runId);
+}
+
 export function statePath(cwd: string, runId: string): string {
   return join(runDir(cwd, runId), "state.json");
 }

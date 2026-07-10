@@ -151,6 +151,11 @@ test("completed workflows cannot be reopened and duplicate approval is idempoten
   const repeated = await approveWorkflow({ cwd, runId: state.runId, gate: "requirements" });
   assert.deepEqual(repeated, before);
   assert.deepEqual(await loadState(cwd, state.runId), before);
+  await assert.rejects(
+    () => approveWorkflow({ cwd, runId: state.runId, gate: "architecture" }),
+    /workflow phase is complete/,
+  );
+  assert.deepEqual(await loadState(cwd, state.runId), before);
 
   const active = await startWorkflow({
     cwd: await tempProject(),
@@ -172,6 +177,39 @@ test("completed workflows cannot be reopened and duplicate approval is idempoten
     note: "Must not be recorded",
   });
   assert.deepEqual(duplicate, advanced);
+});
+
+test("gate actions require the current gate to be pending and awaiting approval", async () => {
+  const cases = [
+    { action: "approve", status: "ready", gateStatus: "pending" },
+    { action: "reject", status: "ready", gateStatus: "pending" },
+    { action: "approve", status: "awaiting_approval", gateStatus: "not_started" },
+    { action: "reject", status: "awaiting_approval", gateStatus: "not_started" },
+  ] as const;
+
+  for (const testCase of cases) {
+    const cwd = await tempProject();
+    const state = await startWorkflow({
+      cwd,
+      host: "codex",
+      mode: "feature",
+      request: "Plan",
+      backend: "local",
+    });
+    state.status = testCase.status;
+    state.gates.requirements = testCase.gateStatus;
+    await saveState(state);
+    const before = await loadState(cwd, state.runId);
+
+    await assert.rejects(
+      () =>
+        testCase.action === "approve"
+          ? approveWorkflow({ cwd, runId: state.runId, gate: "requirements" })
+          : rejectWorkflow({ cwd, runId: state.runId, gate: "requirements", feedback: "Needs revision" }),
+      /gate requirements is not pending approval/i,
+    );
+    assert.deepEqual(await loadState(cwd, state.runId), before);
+  }
 });
 
 test("reject and answer enforce the current gate state", async () => {

@@ -23,6 +23,25 @@ test("stdio line processor returns parse errors without throwing", async () => {
   });
 });
 
+test("stdio rejects valid JSON with an invalid request shape", async () => {
+  for (const line of [
+    "null",
+    "[]",
+    JSON.stringify({ jsonrpc: "1.0", id: 1, method: "tools/list" }),
+    JSON.stringify({ jsonrpc: "2.0", id: 1 }),
+  ]) {
+    const output: unknown[] = [];
+    const processLine = createStdioLineProcessor((message) => output.push(message));
+
+    await processLine(line);
+
+    assert.deepEqual((output[0] as { error: unknown }).error, {
+      code: -32600,
+      message: "Invalid Request",
+    });
+  }
+});
+
 test("stdio line processor ignores initialized notifications", async () => {
   const output: string[] = [];
   const processLine = createStdioLineProcessor((message) => output.push(`${JSON.stringify(message)}\n`));
@@ -50,6 +69,24 @@ test("stdio line processor serializes requests in arrival order", async () => {
   assert.deepEqual(calls, ["1", "2"]);
 });
 
+test("stdio continues after a queued handler rejects", async () => {
+  const calls: string[] = [];
+  const processLine = createStdioLineProcessor(() => {}, async (request) => {
+    calls.push(String(request.id));
+    if (request.id === 1) {
+      throw new Error("first failed");
+    }
+  });
+
+  await assert.rejects(
+    () => processLine(JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" })),
+    /first failed/,
+  );
+  await processLine(JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list" }));
+
+  assert.deepEqual(calls, ["1", "2"]);
+});
+
 test("stdio initialize response uses the shared DevCrew version", async () => {
   const output: string[] = [];
   const processLine = createStdioLineProcessor((message) => output.push(`${JSON.stringify(message)}\n`));
@@ -62,4 +99,3 @@ test("stdio initialize response uses the shared DevCrew version", async () => {
     version: DEVCREW_VERSION,
   });
 });
-

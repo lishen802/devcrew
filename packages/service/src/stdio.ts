@@ -2,13 +2,24 @@ import { callDevCrewTool, listDevCrewTools } from "./tools.js";
 import { DEVCREW_VERSION } from "../../core/src/index.js";
 
 interface JsonRpcRequest {
+  jsonrpc: "2.0";
   id?: string | number | null;
-  method?: string;
+  method: string;
   params?: Record<string, unknown>;
 }
 
 type JsonWriter = (message: unknown) => void;
 type RequestHandler = (request: JsonRpcRequest) => Promise<void>;
+
+function isJsonRpcRequest(value: unknown): value is JsonRpcRequest {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    (value as { jsonrpc?: unknown }).jsonrpc === "2.0" &&
+    typeof (value as { method?: unknown }).method === "string"
+  );
+}
 
 function writeJson(message: unknown): void {
   process.stdout.write(`${JSON.stringify(message)}\n`);
@@ -61,7 +72,7 @@ async function handleRequest(request: JsonRpcRequest, write: JsonWriter): Promis
       return;
     }
 
-    throw new Error(`Unsupported JSON-RPC method: ${request.method ?? "unknown"}`);
+    throw new Error(`Unsupported JSON-RPC method: ${request.method}`);
   } catch (error) {
     write({
       jsonrpc: "2.0",
@@ -85,9 +96,9 @@ export function createStdioLineProcessor(
       return queue;
     }
 
-    let request: JsonRpcRequest;
+    let request: unknown;
     try {
-      request = JSON.parse(trimmed) as JsonRpcRequest;
+      request = JSON.parse(trimmed) as unknown;
     } catch {
       write({
         jsonrpc: "2.0",
@@ -97,8 +108,18 @@ export function createStdioLineProcessor(
       return queue;
     }
 
-    queue = queue.then(() => handler(request));
-    return queue;
+    if (!isJsonRpcRequest(request)) {
+      write({
+        jsonrpc: "2.0",
+        id: null,
+        error: { code: -32600, message: "Invalid Request" },
+      });
+      return queue;
+    }
+
+    const task = queue.then(() => handler(request));
+    queue = task.catch(() => undefined);
+    return task;
   };
 }
 

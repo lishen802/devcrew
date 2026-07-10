@@ -39,14 +39,17 @@ function newRunId(): string {
   return `dc-${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`;
 }
 
-export function nextPhaseAfterGate(gate: GateName): RunState["phase"] {
-  const nextByGate: Record<GateName, RunState["phase"]> = {
-    requirements: "architecture",
-    architecture: "implementation",
-    implementation: "testing",
-    testing: "acceptance",
-  };
-  return nextByGate[gate];
+export function nextPhaseAfterGate(state: RunState, gate: GateName): RunState["phase"] {
+  switch (gate) {
+    case "requirements":
+      return "architecture";
+    case "architecture":
+      return "implementation";
+    case "implementation":
+      return state.executionMode === "apply" ? "execution" : "testing";
+    case "testing":
+      return "acceptance";
+  }
 }
 
 export function artifactForPhase(phase: RunState["phase"]): ArtifactName {
@@ -54,6 +57,7 @@ export function artifactForPhase(phase: RunState["phase"]): ArtifactName {
     requirements: "requirements",
     architecture: "architecture",
     implementation: "implementation-plan",
+    execution: "implementation-review",
     testing: "test-report",
     acceptance: "acceptance",
     complete: "acceptance",
@@ -68,10 +72,17 @@ export function gateForPhase(phase: RunState["phase"]): GateName | undefined {
   return undefined;
 }
 
-function assertCurrentGate(state: RunState, gate: GateName): void {
+function assertPendingCurrentGate(state: RunState, gate: GateName): void {
   const expected = gateForPhase(state.phase);
-  if (expected && expected !== gate) {
-    throw new Error(`Cannot act on ${gate} while current gate is ${expected}`);
+  if (expected !== gate) {
+    throw new Error(
+      expected
+        ? `Cannot act on ${gate} while current gate is ${expected}`
+        : `Cannot act on ${gate} while workflow phase is ${state.phase}`,
+    );
+  }
+  if (state.status !== "awaiting_approval" || state.gates[gate] !== "pending") {
+    throw new Error(`Gate ${gate} is not pending approval`);
   }
 }
 
@@ -94,6 +105,9 @@ export async function startWorkflow(input: StartWorkflowInput, options: Workflow
   const config = await ensureConfig(cwd);
   const backend = input.backend ? parseBackend(input.backend) : config.defaultBackend === "host-preferred" ? host : config.defaultBackend;
   const executionMode = input.executionMode ? parseExecutionMode(input.executionMode) : config.executionMode;
+  if (executionMode === "apply" && backend === "local") {
+    throw new Error("DevCrew apply mode requires a codex or claude backend; local is plan-only");
+  }
   const createdAt = now();
   const state: RunState = {
     version: 1,
@@ -163,7 +177,10 @@ export async function continueWorkflow(input: RunRef): Promise<RunState> {
 export async function approveWorkflow(input: ApproveWorkflowInput): Promise<RunState> {
   const state = await getWorkflowStatus(input);
   const gate = parseGate(input.gate);
-  assertCurrentGate(state, gate);
+  if (state.gates[gate] === "approved") {
+    return state;
+  }
+  assertPendingCurrentGate(state, gate);
   state.gates[gate] = "approved";
   state.approvals.push({
     gate,
@@ -171,7 +188,7 @@ export async function approveWorkflow(input: ApproveWorkflowInput): Promise<RunS
     createdAt: now(),
   });
 
-  const nextPhase = nextPhaseAfterGate(gate);
+  const nextPhase = nextPhaseAfterGate(state, gate);
   state.phase = nextPhase;
   state.status = "ready";
   return saveState(state);
@@ -180,7 +197,10 @@ export async function approveWorkflow(input: ApproveWorkflowInput): Promise<RunS
 export async function rejectWorkflow(input: RejectWorkflowInput): Promise<RunState> {
   const state = await getWorkflowStatus(input);
   const gate = parseGate(input.gate);
-  assertCurrentGate(state, gate);
+  if (state.gates[gate] === "rejected") {
+    return state;
+  }
+  assertPendingCurrentGate(state, gate);
   state.gates[gate] = "rejected";
   state.status = "awaiting_input";
   state.feedback.push({
@@ -193,15 +213,16 @@ export async function rejectWorkflow(input: RejectWorkflowInput): Promise<RunSta
 
 export async function answerWorkflow(input: AnswerWorkflowInput, options: WorkflowMutationOptions = {}): Promise<RunState> {
   const state = await getWorkflowStatus(input);
+  const gate = gateForPhase(state.phase);
+  if (state.status !== "awaiting_input" || !gate || state.gates[gate] !== "rejected") {
+    throw new Error("Workflow must be awaiting_input at a rejected current gate before recording an answer");
+  }
   state.answers.push({
     answer: parseAnswer(input.answer),
     createdAt: now(),
   });
-  const gate = gateForPhase(state.phase);
-  if (gate) {
-    state.gates[gate] = "pending";
-    state.status = "awaiting_approval";
-  }
+  state.gates[gate] = "pending";
+  state.status = "awaiting_approval";
   if (!options.skipArtifactWrite) {
     await writeCurrentArtifact(state);
   }

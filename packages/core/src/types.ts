@@ -6,6 +6,7 @@ export const PHASES = [
   "requirements",
   "architecture",
   "implementation",
+  "execution",
   "testing",
   "acceptance",
   "complete",
@@ -115,6 +116,11 @@ export interface VerificationResult {
   completedAt: string;
 }
 
+export interface ExecutionWorkspace {
+  path: string;
+  baseCommit: string;
+}
+
 export interface RunState {
   version: 1;
   runId: string;
@@ -122,6 +128,7 @@ export interface RunState {
   host: Host;
   mode: WorkflowMode;
   executionMode: ExecutionMode;
+  executionWorkspace?: ExecutionWorkspace;
   backend: BackendName;
   request: string;
   phase: Phase;

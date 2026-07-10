@@ -7,12 +7,14 @@ import assert from "node:assert/strict";
 import {
   answerWorkflow,
   approveWorkflow,
+  artifactForPhase,
   continueWorkflow,
   discoverCoverageCommands,
   discoverLintCommands,
   discoverVerifyCommands,
   discoverStandards,
   DEVCREW_VERSION,
+  gateForPhase,
   getArtifact,
   loadState,
   rejectWorkflow,
@@ -65,6 +67,157 @@ test("startWorkflow persists explicit apply execution mode", async () => {
 
   const loaded = await loadState(cwd, state.runId);
   assert.equal(loaded.executionMode, "apply");
+});
+
+test("apply mode rejects the deterministic local backend", async () => {
+  const cwd = await tempProject();
+  await assert.rejects(
+    () =>
+      startWorkflow({
+        cwd,
+        host: "codex",
+        mode: "feature",
+        request: "Make a real change",
+        backend: "local",
+        executionMode: "apply",
+      }),
+    /apply mode requires a codex or claude backend/i,
+  );
+});
+
+test("apply implementation approval advances to execution while plan advances to testing", async () => {
+  const apply = await startWorkflow({
+    cwd: await tempProject(),
+    host: "codex",
+    mode: "feature",
+    request: "Apply a change",
+    backend: "codex",
+    executionMode: "apply",
+  });
+  apply.phase = "implementation";
+  apply.status = "awaiting_approval";
+  apply.gates.requirements = "approved";
+  apply.gates.architecture = "approved";
+  apply.gates.implementation = "pending";
+  await saveState(apply);
+
+  const approvedApply = await approveWorkflow({
+    cwd: apply.cwd,
+    runId: apply.runId,
+    gate: "implementation",
+  });
+  assert.equal(approvedApply.phase, "execution");
+  assert.equal(artifactForPhase("execution"), "implementation-review");
+  assert.equal(gateForPhase("execution"), undefined);
+
+  const plan = await startWorkflow({
+    cwd: await tempProject(),
+    host: "codex",
+    mode: "feature",
+    request: "Plan a change",
+    backend: "local",
+  });
+  plan.phase = "implementation";
+  plan.status = "awaiting_approval";
+  plan.gates.requirements = "approved";
+  plan.gates.architecture = "approved";
+  plan.gates.implementation = "pending";
+  await saveState(plan);
+
+  const approvedPlan = await approveWorkflow({
+    cwd: plan.cwd,
+    runId: plan.runId,
+    gate: "implementation",
+  });
+  assert.equal(approvedPlan.phase, "testing");
+});
+
+test("completed workflows cannot be reopened and duplicate approval is idempotent", async () => {
+  const cwd = await tempProject();
+  const state = await startWorkflow({
+    cwd,
+    host: "codex",
+    mode: "feature",
+    request: "Plan",
+    backend: "local",
+  });
+  state.phase = "complete";
+  state.status = "complete";
+  state.gates.requirements = "approved";
+  state.approvals.push({ gate: "requirements", createdAt: new Date().toISOString() });
+  await saveState(state);
+
+  const before = await loadState(cwd, state.runId);
+  const repeated = await approveWorkflow({ cwd, runId: state.runId, gate: "requirements" });
+  assert.deepEqual(repeated, before);
+  assert.deepEqual(await loadState(cwd, state.runId), before);
+
+  const active = await startWorkflow({
+    cwd: await tempProject(),
+    host: "codex",
+    mode: "feature",
+    request: "Another plan",
+    backend: "local",
+  });
+  await approveWorkflow({
+    cwd: active.cwd,
+    runId: active.runId,
+    gate: "requirements",
+  });
+  const advanced = await loadState(active.cwd, active.runId);
+  const duplicate = await approveWorkflow({
+    cwd: active.cwd,
+    runId: active.runId,
+    gate: "requirements",
+    note: "Must not be recorded",
+  });
+  assert.deepEqual(duplicate, advanced);
+});
+
+test("reject and answer enforce the current gate state", async () => {
+  const cwd = await tempProject();
+  const state = await startWorkflow({
+    cwd,
+    host: "codex",
+    mode: "feature",
+    request: "Plan",
+    backend: "local",
+  });
+
+  await assert.rejects(
+    () => answerWorkflow({ cwd, runId: state.runId, answer: "Unsolicited answer" }),
+    /awaiting_input/,
+  );
+  assert.equal((await loadState(cwd, state.runId)).answers.length, 0);
+
+  await assert.rejects(
+    () => rejectWorkflow({ cwd, runId: state.runId, gate: "architecture", feedback: "Wrong gate" }),
+    /current gate is requirements/,
+  );
+  assert.equal((await loadState(cwd, state.runId)).feedback.length, 0);
+
+  const rejected = await rejectWorkflow({
+    cwd,
+    runId: state.runId,
+    gate: "requirements",
+    feedback: "Needs revision",
+  });
+  const duplicate = await rejectWorkflow({
+    cwd,
+    runId: state.runId,
+    gate: "requirements",
+    feedback: "Must not be recorded",
+  });
+  assert.deepEqual(duplicate, rejected);
+
+  const answered = await answerWorkflow({ cwd, runId: state.runId, answer: "Revised scope" });
+  assert.equal(answered.gates.requirements, "pending");
+  assert.equal(answered.status, "awaiting_approval");
+  await assert.rejects(
+    () => answerWorkflow({ cwd, runId: state.runId, answer: "Another unsolicited answer" }),
+    /awaiting_input/,
+  );
+  assert.equal((await loadState(cwd, state.runId)).answers.length, 1);
 });
 
 test("approveWorkflow and continueWorkflow advance through gated stages idempotently", async () => {
@@ -218,6 +371,45 @@ test("loadState migrates missing lintResults to empty array", async () => {
 
   const loaded = await loadState(cwd, state.runId);
   assert.deepEqual(loaded.lintResults, []);
+});
+
+test("loadState normalizes execution workspace and preserves legacy field migrations", async () => {
+  const cwd = await tempProject();
+  const state = await startWorkflow({
+    cwd,
+    host: "codex",
+    mode: "feature",
+    request: "Add logging",
+  });
+  const statePath = join(runDir(cwd, state.runId), "state.json");
+  const raw = JSON.parse(await readFile(statePath, "utf8"));
+  delete raw.executionMode;
+  raw.executionWorkspace = { path: "/tmp/devcrew-worktree", baseCommit: "abc123" };
+  raw.changedFiles = "invalid";
+  raw.implementationDiff = 42;
+  raw.verification = {};
+  raw.lintResults = null;
+  await writeFile(statePath, JSON.stringify(raw));
+
+  const loaded = await loadState(cwd, state.runId);
+  assert.equal(loaded.executionMode, "plan");
+  assert.deepEqual(loaded.executionWorkspace, {
+    path: "/tmp/devcrew-worktree",
+    baseCommit: "abc123",
+  });
+  assert.deepEqual(loaded.changedFiles, []);
+  assert.equal(loaded.implementationDiff, "");
+  assert.deepEqual(loaded.verification, []);
+  assert.deepEqual(loaded.lintResults, []);
+
+  for (const executionWorkspace of [
+    { path: 42, baseCommit: "abc123" },
+    { path: "/tmp/devcrew-worktree", baseCommit: 42 },
+  ]) {
+    raw.executionWorkspace = executionWorkspace;
+    await writeFile(statePath, JSON.stringify(raw));
+    assert.equal((await loadState(cwd, state.runId)).executionWorkspace, undefined);
+  }
 });
 
 test("core exports the shared DevCrew version", () => {

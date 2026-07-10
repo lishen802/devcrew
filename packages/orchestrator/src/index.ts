@@ -1,11 +1,12 @@
 import { spawn } from "node:child_process";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { dirname, resolve as resolvePath } from "node:path";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
 
 import { runRole } from "../../adapters/src/index.js";
 import type { RoleRunInput } from "../../adapters/src/index.js";
 import {
   answerWorkflow,
+  approveWorkflow,
   artifactForPhase,
   artifactPath,
   ARTIFACTS,
@@ -20,6 +21,7 @@ import {
   saveState,
   startWorkflow,
   type AnswerWorkflowInput,
+  type ApproveWorkflowInput,
   type ArtifactName,
   type Phase,
   type RejectWorkflowInput,
@@ -29,6 +31,11 @@ import {
   type StartWorkflowInput,
   type VerificationResult,
 } from "../../core/src/index.js";
+import {
+  captureExecutionChanges,
+  ensureExecutionWorkspace,
+  promoteExecutionChanges,
+} from "./worktree.js";
 
 // Hard cap so a hung apply/verify command cannot block the serialized MCP loop.
 const COMMAND_TIMEOUT_MS = 300_000;
@@ -40,6 +47,7 @@ function roleForPhase(phase: Phase): RoleResult["role"] | undefined {
     requirements: "pm",
     architecture: "architect",
     implementation: "implementer",
+    execution: "implementer",
     testing: "tester",
   };
   return roles[phase];
@@ -159,116 +167,6 @@ export async function runShellCommand(
   });
 }
 
-async function runGit(args: string[], cwd: string): Promise<{ exitCode: number; stdout: string }> {
-  return new Promise((resolveResult) => {
-    const child = spawn("git", args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.on("data", (chunk: Buffer) => {
-      stdout += chunk.toString("utf8");
-    });
-    child.stderr.on("data", (chunk: Buffer) => {
-      stderr += chunk.toString("utf8");
-    });
-    child.on("error", () => resolveResult({ exitCode: 1, stdout: "" }));
-    child.on("close", (code) => resolveResult({ exitCode: code ?? 1, stdout: stdout || stderr }));
-  });
-}
-
-async function listChangedLines(cwd: string, options: { requireGit?: boolean } = {}): Promise<string[]> {
-  const result = await runShellCommand("git status --porcelain -uall", cwd, 30_000);
-  if (result.exitCode !== 0) {
-    if (options.requireGit) {
-      throw new Error("DevCrew apply mode requires a git repository so implementation changes can be reviewed and reverted.");
-    }
-    return [];
-  }
-  return result.output
-    .split("\n")
-    .map((line) => line.trimEnd())
-    .filter(Boolean)
-    .filter((line) => {
-      const path = line.slice(3);
-      return !path.startsWith(".devcrew/") && !path.startsWith("docs/devcrew/");
-    });
-}
-
-async function assertCleanApplyWorkspace(cwd: string): Promise<void> {
-  const changedLines = await listChangedLines(cwd, { requireGit: true });
-  if (changedLines.length === 0) {
-    return;
-  }
-  const visibleLines = changedLines.slice(0, 20).join(", ");
-  const suffix = changedLines.length > 20 ? `, and ${changedLines.length - 20} more` : "";
-  throw new Error(
-    `DevCrew apply mode requires a clean working tree before implementation. Commit, stash, or remove these files: ${visibleLines}${suffix}`,
-  );
-}
-
-async function collectImplementationDiff(cwd: string): Promise<string> {
-  const result = await runShellCommand("git diff --no-ext-diff --", cwd, 30_000);
-  if (result.exitCode !== 0) {
-    return "";
-  }
-  return result.output;
-}
-
-// Files attributable to this run are the porcelain lines that appeared (or
-// changed status) since the baseline captured before the role executed. This
-// keeps a user's pre-existing uncommitted edits out of the changed-files list.
-// The porcelain status prefix is preserved for review (?? = new, M = modified).
-export function changedSinceBaseline(baseline: string[], current: string[]): string[] {
-  const baselineLines = new Set(baseline);
-  return current.filter((line) => !baselineLines.has(line));
-}
-
-// Strip the two-character porcelain status plus its separating space. For
-// rename entries ("R  old -> new") the destination path is what remains
-// relevant, so keep only the post-arrow path when present.
-export function porcelainPath(line: string): string {
-  const raw = line.slice(3).trim();
-  const arrow = raw.indexOf(" -> ");
-  return arrow >= 0 ? raw.slice(arrow + 4) : raw;
-}
-
-export interface RevertDeps {
-  runGit?: (args: string[], cwd: string) => Promise<{ exitCode: number; stdout: string }>;
-  removeFile?: (absolutePath: string) => Promise<void>;
-}
-
-// Roll back implementer edits when an apply-mode gate is rejected.
-// Only the files this run introduced/changed are reverted, so unrelated work in
-// the repository is preserved. Tracked files are restored from HEAD; files that
-// did not exist in HEAD are deleted. Failures are surfaced to the MCP caller.
-export async function revertChangedFiles(
-  cwd: string,
-  changedFiles: string[],
-  deps: RevertDeps = {},
-): Promise<void> {
-  const git = deps.runGit ?? runGit;
-  const removeFile = deps.removeFile ?? ((absolutePath: string) => rm(absolutePath, { force: true }));
-  for (const line of changedFiles) {
-    const file = porcelainPath(line);
-    if (!file) {
-      continue;
-    }
-    const tracked = await git(["cat-file", "-e", `HEAD:${file}`], cwd);
-    if (tracked.exitCode === 0) {
-      const restored = await git(["restore", "--source=HEAD", "--", file], cwd);
-      if (restored.exitCode !== 0) {
-        throw new Error(`Failed to restore ${file}: ${restored.stdout || "git restore failed"}`);
-      }
-    } else {
-      try {
-        await removeFile(resolvePath(cwd, file));
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        throw new Error(`Failed to remove ${file}: ${message}`);
-      }
-    }
-  }
-}
-
 async function runCommands(commands: string[], cwd: string): Promise<VerificationResult[]> {
   const results: VerificationResult[] = [];
   for (const command of commands) {
@@ -293,30 +191,23 @@ function uniqueCommands(commands: string[]): string[] {
 // Tester verification runs the normal verification path first, then coverage
 // as supplemental evidence. Configured commands win per category; otherwise
 // DevCrew discovers common project commands.
-async function runConfiguredVerification(state: RunState): Promise<VerificationResult[]> {
+async function runConfiguredVerification(state: RunState, commandCwd: string): Promise<VerificationResult[]> {
   const config = await readConfig(state.cwd);
   const configuredVerify = config.verifyCommands.filter((command) => command.trim().length > 0);
   const configuredCoverage = (config.coverageCommands ?? []).filter((command) => command.trim().length > 0);
-  const verifyCommands = configuredVerify.length > 0 ? configuredVerify : await discoverVerifyCommands(state.cwd);
-  const coverageCommands = configuredCoverage.length > 0 ? configuredCoverage : await discoverCoverageCommands(state.cwd);
+  const verifyCommands = configuredVerify.length > 0 ? configuredVerify : await discoverVerifyCommands(commandCwd);
+  const coverageCommands = configuredCoverage.length > 0 ? configuredCoverage : await discoverCoverageCommands(commandCwd);
   const commands = uniqueCommands([...verifyCommands, ...coverageCommands]);
-  return runCommands(commands, state.cwd);
+  return runCommands(commands, commandCwd);
 }
 
 // Implementer apply runs lint/format/typecheck so reviewers see standards
 // compliance evidence. Configured lintCommands win, otherwise discover them.
-async function runConfiguredLint(state: RunState): Promise<VerificationResult[]> {
+async function runConfiguredLint(state: RunState, commandCwd: string): Promise<VerificationResult[]> {
   const config = await readConfig(state.cwd);
   const configuredLint = (config.lintCommands ?? []).filter((command) => command.trim().length > 0);
-  const commands = configuredLint.length > 0 ? configuredLint : await discoverLintCommands(state.cwd);
-  return runCommands(commands, state.cwd);
-}
-
-function changedFilesBlock(changedFiles: string[]): string {
-  if (changedFiles.length === 0) {
-    return "No changed files were detected.";
-  }
-  return changedFiles.map((file) => `- ${file}`).join("\n");
+  const commands = configuredLint.length > 0 ? configuredLint : await discoverLintCommands(commandCwd);
+  return runCommands(commands, commandCwd);
 }
 
 function verificationBlock(results: VerificationResult[]): string {
@@ -331,31 +222,58 @@ function verificationBlock(results: VerificationResult[]): string {
     .join("\n\n");
 }
 
-function lintBlock(results: VerificationResult[]): string {
-  if (results.length === 0) {
-    return "No lint or format commands were detected.";
-  }
-  return verificationBlock(results);
-}
-
 function appendExecutionSections(artifact: ArtifactName, markdown: string, state: RunState): string {
-  if (artifact === "implementation-plan") {
-    let next = markdown.trim();
-    if (!next.includes("## Recorded Changes")) {
-      next = `${next}\n\n## Recorded Changes\n\n${changedFilesBlock(state.changedFiles)}`;
-    }
-    if (!next.includes("## Lint Results")) {
-      next = `${next}\n\n## Lint Results\n\n${lintBlock(state.lintResults)}`;
-    }
-    return `${next}\n`;
-  }
   if (artifact === "test-report" && !markdown.includes("## Acceptance Evidence")) {
     return `${markdown.trim()}\n\n## Acceptance Evidence\n\n${verificationBlock(state.verification)}\n`;
   }
   return markdown;
 }
 
+async function writeImplementationReview(state: RunState): Promise<void> {
+  state.artifacts["implementation-review"] = await writeMarkdownArtifact(
+    state,
+    "implementation-review",
+    renderArtifact("implementation-review", state),
+  );
+}
+
 async function runCurrentPhaseRole(state: RunState, runner: RoleRunner = runRole): Promise<RunState> {
+  if (state.phase === "execution") {
+    if (state.executionMode !== "apply") {
+      throw new Error("DevCrew execution phase requires apply mode");
+    }
+    const workspace = await ensureExecutionWorkspace(state);
+    state.executionWorkspace = workspace;
+    state.verification = [];
+    delete state.artifacts["test-report"];
+    await saveState(state);
+
+    const result = await runner({
+      backend: state.backend,
+      role: "implementer",
+      phase: "execution",
+      request: state.request,
+      mode: state.mode,
+      executionMode: "apply",
+      cwd: workspace.path,
+      standards: state.standards.combined,
+      artifactPath: artifactPath(state.cwd, state.runId, "implementation-review"),
+      answers: state.answers.map((entry) => entry.answer),
+      feedback: state.feedback.map((entry) => `${entry.gate}: ${entry.message}`),
+      priorArtifacts: await readPriorArtifacts(state),
+    });
+    await captureExecutionChanges(workspace);
+    state.lintResults = await runConfiguredLint(state, workspace.path);
+    const captured = await captureExecutionChanges(workspace);
+    state.changedFiles = captured.changedFiles;
+    state.implementationDiff = captured.patch;
+    state.roles.push(result);
+    await writeImplementationReview(state);
+    state.phase = "testing";
+    state.status = "ready";
+    return saveState(state);
+  }
+
   const gate = gateForPhase(state.phase);
   const role = roleForPhase(state.phase);
   if (!gate || !role) {
@@ -369,14 +287,12 @@ async function runCurrentPhaseRole(state: RunState, runner: RoleRunner = runRole
 
   const artifact = artifactForPhase(state.phase);
   const path = artifactPath(state.cwd, state.runId, artifact);
-
-  // Apply-mode implementation starts from a clean tree, so changed files after
-  // the role runs are attributable to the current DevCrew run.
-  const applyingImplementation = state.executionMode === "apply" && state.phase === "implementation";
-  const implementationBaseline: string[] = [];
-  if (applyingImplementation) {
-    await assertCleanApplyWorkspace(state.cwd);
+  const applyingTesting = state.executionMode === "apply" && state.phase === "testing";
+  const roleCwd = applyingTesting ? state.executionWorkspace?.path : state.cwd;
+  if (!roleCwd) {
+    throw new Error("DevCrew apply testing requires an execution workspace");
   }
+  const roleExecutionMode = state.phase === "implementation" ? "plan" : state.executionMode;
 
   state.roles.push(conductorDecision(state, role, gate));
 
@@ -386,8 +302,8 @@ async function runCurrentPhaseRole(state: RunState, runner: RoleRunner = runRole
     phase: state.phase,
     request: state.request,
     mode: state.mode,
-    executionMode: state.executionMode,
-    cwd: state.cwd,
+    executionMode: roleExecutionMode,
+    cwd: roleCwd,
     standards: state.standards.combined,
     artifactPath: path,
     answers: state.answers.map((entry) => entry.answer),
@@ -395,13 +311,12 @@ async function runCurrentPhaseRole(state: RunState, runner: RoleRunner = runRole
     priorArtifacts: await readPriorArtifacts(state),
   });
 
-  if (applyingImplementation) {
-    state.changedFiles = changedSinceBaseline(implementationBaseline, await listChangedLines(state.cwd));
-    state.implementationDiff = await collectImplementationDiff(state.cwd);
-    state.lintResults = await runConfiguredLint(state);
-  }
-  if (state.executionMode === "apply" && state.phase === "testing") {
-    state.verification = await runConfiguredVerification(state);
+  if (applyingTesting && state.executionWorkspace) {
+    state.verification = await runConfiguredVerification(state, roleCwd);
+    const captured = await captureExecutionChanges(state.executionWorkspace);
+    state.changedFiles = captured.changedFiles;
+    state.implementationDiff = captured.patch;
+    await writeImplementationReview(state);
   }
 
   // When the backend cannot run a real SDK we keep a single deterministic
@@ -410,13 +325,6 @@ async function runCurrentPhaseRole(state: RunState, runner: RoleRunner = runRole
   const markdown = appendExecutionSections(artifact, baseMarkdown, state);
   state.roles.push({ ...result, markdown });
   state.artifacts[artifact] = await writeMarkdownArtifact(state, artifact, markdown);
-  if (artifact === "implementation-plan") {
-    state.artifacts["implementation-review"] = await writeMarkdownArtifact(
-      state,
-      "implementation-review",
-      renderArtifact("implementation-review", state),
-    );
-  }
   state.gates[gate] = "pending";
   state.status = "awaiting_approval";
   return saveState(state);
@@ -436,27 +344,44 @@ export async function continueOrchestratedWorkflow(input: RunRef, runner: RoleRu
   return runCurrentPhaseRole(state, runner);
 }
 
-export async function rejectOrchestratedWorkflow(input: RejectWorkflowInput): Promise<RunState> {
+export async function approveOrchestratedWorkflow(input: ApproveWorkflowInput): Promise<RunState> {
   const before = await getWorkflowStatus(input);
-  const state = await rejectWorkflow(input);
-
-  // Roll back implementer edits when an apply-mode implementation gate is
-  // rejected so the next attempt starts from a clean working tree.
-  if (
+  const promotingTesting =
+    input.gate === "testing" &&
     before.executionMode === "apply" &&
-    before.phase === "implementation" &&
-    before.changedFiles.length > 0
-  ) {
-    await revertChangedFiles(before.cwd, before.changedFiles);
-    state.changedFiles = [];
-    return saveState(state);
+    before.phase === "testing" &&
+    before.status === "awaiting_approval" &&
+    before.gates.testing === "pending";
+  if (promotingTesting) {
+    await promoteExecutionChanges(before);
   }
 
+  const state = await approveWorkflow(input);
+  if (promotingTesting && state.executionWorkspace) {
+    state.executionWorkspace = undefined;
+    return saveState(state);
+  }
   return state;
 }
 
+export async function rejectOrchestratedWorkflow(input: RejectWorkflowInput): Promise<RunState> {
+  return rejectWorkflow(input);
+}
+
 export async function answerOrchestratedWorkflow(input: AnswerWorkflowInput, runner: RoleRunner = runRole): Promise<RunState> {
+  const before = await getWorkflowStatus(input);
   const state = await answerWorkflow(input, { skipArtifactWrite: true });
+  if (
+    before.executionMode === "apply" &&
+    before.phase === "testing" &&
+    before.gates.testing === "rejected"
+  ) {
+    state.phase = "execution";
+    state.status = "ready";
+    state.gates.testing = "not_started";
+    return saveState(state);
+  }
+
   const gate = gateForPhase(state.phase);
   const role = roleForPhase(state.phase);
   if (!gate || !role) {

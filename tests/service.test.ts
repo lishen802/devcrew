@@ -1,16 +1,29 @@
-import { mkdtemp } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { access, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { promisify } from "node:util";
 import test from "node:test";
 import assert from "node:assert/strict";
 
 import { callDevCrewTool, listDevCrewTools } from "../packages/service/src/index.js";
-import { startOrchestratedWorkflow } from "../packages/orchestrator/src/index.js";
-import type { RoleResult } from "../packages/core/src/index.js";
+import { continueOrchestratedWorkflow, startOrchestratedWorkflow } from "../packages/orchestrator/src/index.js";
+import { approveWorkflow, type RoleResult } from "../packages/core/src/index.js";
 import type { RoleRunInput } from "../packages/adapters/src/index.js";
 
 async function tempProject(): Promise<string> {
   return mkdtemp(join(tmpdir(), "devcrew-service-"));
+}
+
+const execFileAsync = promisify(execFile);
+
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 test("MCP tool registry exposes the planned DevCrew tools", () => {
@@ -142,6 +155,64 @@ test("MCP tool calls create, inspect, approve, continue, and read artifacts", as
   });
   assert.match(artifact.content[0].text, /## Technical Decisions/);
   assert.match(artifact.content[0].text, /Architecture/);
+});
+
+test("MCP testing approval promotes an isolated patch once", async () => {
+  const cwd = await tempProject();
+  await execFileAsync("git", ["init"], { cwd });
+  await execFileAsync("git", ["config", "user.email", "devcrew@example.test"], { cwd });
+  await execFileAsync("git", ["config", "user.name", "DevCrew Test"], { cwd });
+  await writeFile(join(cwd, "README.md"), "# Service Fixture\n");
+  await execFileAsync("git", ["add", "."], { cwd });
+  await execFileAsync("git", ["commit", "-m", "base"], { cwd });
+
+  const runner = async (input: RoleRunInput): Promise<RoleResult> => {
+    if (input.phase === "execution") {
+      await writeFile(join(input.cwd, "generated.ts"), "export const generated = true;\n");
+    }
+    return {
+      role: input.role,
+      backend: input.backend,
+      summary: `${input.role} completed`,
+      markdown: `# ${input.role}\n\nCompleted ${input.phase}.\n`,
+      usedFallback: false,
+    };
+  };
+  const started = await startOrchestratedWorkflow({
+    cwd,
+    host: "codex",
+    mode: "feature",
+    executionMode: "apply",
+    request: "Add generated code",
+    backend: "codex",
+  }, runner);
+  await approveWorkflow({ cwd, runId: started.runId, gate: "requirements" });
+  await continueOrchestratedWorkflow({ cwd, runId: started.runId }, runner);
+  await approveWorkflow({ cwd, runId: started.runId, gate: "architecture" });
+  await continueOrchestratedWorkflow({ cwd, runId: started.runId }, runner);
+  await approveWorkflow({ cwd, runId: started.runId, gate: "implementation" });
+  await continueOrchestratedWorkflow({ cwd, runId: started.runId }, runner);
+  const tested = await continueOrchestratedWorkflow({ cwd, runId: started.runId }, runner);
+  const workspacePath = tested.executionWorkspace?.path;
+  assert.ok(workspacePath);
+  assert.equal(await pathExists(join(cwd, "generated.ts")), false);
+
+  const approved = await callDevCrewTool("devcrew_approve", {
+    cwd,
+    runId: started.runId,
+    gate: "testing",
+  });
+  assert.equal(approved.isError, false);
+  assert.equal(await readFile(join(cwd, "generated.ts"), "utf8"), "export const generated = true;\n");
+  assert.equal(await pathExists(workspacePath), false);
+
+  const duplicate = await callDevCrewTool("devcrew_approve", {
+    cwd,
+    runId: started.runId,
+    gate: "testing",
+  });
+  assert.equal(duplicate.isError, false);
+  assert.match(duplicate.content[0].text, /phase=acceptance/);
 });
 
 test("MCP tool calls return structured errors for invalid input", async () => {

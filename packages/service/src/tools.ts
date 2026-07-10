@@ -1,5 +1,4 @@
 import {
-  approveWorkflow,
   getArtifact,
   getActiveRunId,
   getWorkflowStatus,
@@ -9,6 +8,7 @@ import {
 } from "../../core/src/index.js";
 import {
   answerOrchestratedWorkflow,
+  approveOrchestratedWorkflow,
   continueOrchestratedWorkflow,
   rejectOrchestratedWorkflow,
   startOrchestratedWorkflow,
@@ -193,7 +193,7 @@ export async function callDevCrewTool(name: string, args: Record<string, unknown
       return success(`${summarizeState(state)}. Answer recorded.`, { state });
     }
     if (name === "devcrew_approve") {
-      const state = await approveWorkflow((await withActiveRun(args)) as never);
+      const state = await approveOrchestratedWorkflow((await withActiveRun(args)) as never);
       return success(`${summarizeState(state)}. Gate approved.`, { state });
     }
     if (name === "devcrew_reject") {

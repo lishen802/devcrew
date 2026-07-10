@@ -113,17 +113,17 @@ test("buildCodexThreadOptions leaves read-only runs without an approval override
   assert.equal(options.approvalPolicy, undefined);
 });
 
-test("runRole gives implementer a writable Codex sandbox only in apply mode", async () => {
-  let receivedOptions: CodexThreadOptions | undefined;
-  let receivedPrompt = "";
+test("runRole gives implementer a writable Codex sandbox only during execution", async () => {
+  const receivedOptions: CodexThreadOptions[] = [];
+  const receivedPrompts: string[] = [];
 
   const loadModule: ModuleLoader = async () => ({
     Codex: class {
       startThread(options?: CodexThreadOptions) {
-        receivedOptions = options;
+        receivedOptions.push(options ?? {});
         return {
           run: async (prompt: string) => {
-            receivedPrompt = prompt;
+            receivedPrompts.push(prompt);
             return { finalResponse: implementationMarkdown, items: [], usage: null };
           },
         };
@@ -131,18 +131,27 @@ test("runRole gives implementer a writable Codex sandbox only in apply mode", as
     },
   });
 
-  const result = await runRole({
+  const planned = await runRole({
     ...baseInput,
     backend: "codex",
     role: "implementer",
     phase: "implementation",
     executionMode: "apply",
   }, { loadModule });
+  const executed = await runRole({
+    ...baseInput,
+    backend: "codex",
+    role: "implementer",
+    phase: "execution",
+    executionMode: "apply",
+  }, { loadModule });
 
-  assert.equal(result.usedFallback, false);
-  assert.equal(receivedOptions?.sandboxMode, "workspace-write");
-  assert.doesNotMatch(receivedPrompt, /Do not modify repository files/);
-  assert.match(receivedPrompt, /You may modify repository files/);
+  assert.equal(planned.usedFallback, false);
+  assert.equal(executed.usedFallback, false);
+  assert.equal(receivedOptions[0]?.sandboxMode, "read-only");
+  assert.match(receivedPrompts[0] ?? "", /Do not modify repository files/);
+  assert.equal(receivedOptions[1]?.sandboxMode, "workspace-write");
+  assert.match(receivedPrompts[1] ?? "", /You may modify repository files/);
 });
 
 test("extractCodexText returns the trimmed finalResponse", () => {

@@ -102,7 +102,7 @@ export function renderRolePrompt(input: Omit<RoleRunInput, "backend" | "cwd">): 
     }
   }
 
-  const canApply = executionMode === "apply" && (input.role === "implementer" || input.role === "tester");
+  const canApply = roleCanApply({ ...input, executionMode });
   const permissionInstruction = canApply
     ? input.role === "tester"
       ? "You may run validation commands needed for the approved scope and report exact evidence."
@@ -128,6 +128,7 @@ function titleForPhase(phase: Phase): string {
     requirements: "Requirements",
     architecture: "Architecture",
     implementation: "Implementation Plan",
+    execution: "Implementation Review",
     testing: "Test Report",
     acceptance: "Acceptance",
     complete: "Acceptance",
@@ -293,8 +294,8 @@ export function extractClaudeResult(message: ClaudeResultMessage | undefined): s
   return text;
 }
 
-function roleCanApply(input: RoleRunInput): boolean {
-  return input.executionMode === "apply" && (input.role === "implementer" || input.role === "tester");
+function roleCanApply(input: Pick<RoleRunInput, "executionMode" | "phase">): boolean {
+  return input.executionMode === "apply" && (input.phase === "execution" || input.phase === "testing");
 }
 
 function codexSandboxForRole(input: RoleRunInput): CodexSandboxMode {

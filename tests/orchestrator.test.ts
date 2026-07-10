@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { access, mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -9,10 +9,9 @@ import assert from "node:assert/strict";
 import { approveWorkflow, rejectWorkflow, startWorkflow } from "../packages/core/src/index.js";
 import {
   answerOrchestratedWorkflow,
-  changedSinceBaseline,
+  approveOrchestratedWorkflow,
   continueOrchestratedWorkflow,
   rejectOrchestratedWorkflow,
-  revertChangedFiles,
   runShellCommand,
   startOrchestratedWorkflow,
 } from "../packages/orchestrator/src/index.js";
@@ -32,6 +31,46 @@ async function initGitRepo(cwd: string): Promise<void> {
   await writeFile(join(cwd, "README.md"), "# Test Project\n");
   await execFileAsync("git", ["add", "."], { cwd });
   await execFileAsync("git", ["commit", "-m", "Initial commit"], { cwd });
+}
+
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function validRoleResult(input: RoleRunInput): RoleResult {
+  return {
+    role: input.role,
+    backend: input.backend,
+    summary: `${input.role} completed`,
+    markdown: `# ${input.role}\n\nCompleted ${input.phase}.\n`,
+    usedFallback: false,
+  };
+}
+
+async function advanceApplyToTestingGate(
+  cwd: string,
+  runner: (input: RoleRunInput) => Promise<RoleResult>,
+): Promise<Awaited<ReturnType<typeof startOrchestratedWorkflow>>> {
+  const started = await startOrchestratedWorkflow({
+    cwd,
+    host: "codex",
+    mode: "feature",
+    request: "Add generated code",
+    backend: "codex",
+    executionMode: "apply",
+  }, runner);
+  await approveWorkflow({ cwd, runId: started.runId, gate: "requirements" });
+  await continueOrchestratedWorkflow({ cwd, runId: started.runId }, runner);
+  await approveWorkflow({ cwd, runId: started.runId, gate: "architecture" });
+  await continueOrchestratedWorkflow({ cwd, runId: started.runId }, runner);
+  await approveWorkflow({ cwd, runId: started.runId, gate: "implementation" });
+  await continueOrchestratedWorkflow({ cwd, runId: started.runId }, runner);
+  return continueOrchestratedWorkflow({ cwd, runId: started.runId }, runner);
 }
 
 test("startOrchestratedWorkflow runs the PM role before opening the requirements gate", async () => {
@@ -189,88 +228,128 @@ test("answerOrchestratedWorkflow re-runs the role and folds the answer into the 
   assert.match(requirements, /List the out-of-scope items explicitly/);
 });
 
-test("apply mode records implementer changed files for gate review", async () => {
+test("apply mode plans read-only before executing in a worktree", async () => {
   const cwd = await tempProject();
   await initGitRepo(cwd);
-
-  const started = await startOrchestratedWorkflow({
-    cwd,
-    host: "codex",
-    mode: "feature",
-    request: "Add a generated module",
-    backend: "local",
-    executionMode: "apply",
-  });
-  await approveWorkflow({ cwd, runId: started.runId, gate: "requirements" });
-  await continueOrchestratedWorkflow({ cwd, runId: started.runId });
-  await approveWorkflow({ cwd, runId: started.runId, gate: "architecture" });
-
+  const calls: RoleRunInput[] = [];
   const runner = async (input: RoleRunInput): Promise<RoleResult> => {
-    if (input.role === "implementer") {
+    calls.push(input);
+    if (input.phase === "execution") {
       await writeFile(join(input.cwd, "generated.ts"), "export const generated = true;\n");
     }
-    return {
-      role: input.role,
-      backend: input.backend,
-      summary: `${input.role} completed`,
-      markdown: `# ${input.role}\n\nDone.\n`,
-      usedFallback: false,
-    };
+    return validRoleResult(input);
   };
-
-  const implemented = await continueOrchestratedWorkflow({ cwd, runId: started.runId }, runner);
-
-  assert.deepEqual(implemented.changedFiles, ["?? generated.ts"]);
-  const implementationPath = implemented.artifacts["implementation-plan"];
-  assert.ok(implementationPath);
-  const implementation = await readFile(implementationPath, "utf8");
-  assert.match(implementation, /Recorded Changes/);
-  assert.match(implementation, /\?\? generated\.ts/);
-});
-
-test("implementation phase writes an architecture compliance diff review", async () => {
-  const cwd = await tempProject();
-  await initGitRepo(cwd);
-
   const started = await startOrchestratedWorkflow({
     cwd,
     host: "codex",
     mode: "feature",
-    request: "Update the README according to the approved architecture",
-    backend: "local",
+    request: "Add generated code",
+    backend: "codex",
     executionMode: "apply",
-  });
+  }, runner);
   await approveWorkflow({ cwd, runId: started.runId, gate: "requirements" });
-  await continueOrchestratedWorkflow({ cwd, runId: started.runId });
+  await continueOrchestratedWorkflow({ cwd, runId: started.runId }, runner);
   await approveWorkflow({ cwd, runId: started.runId, gate: "architecture" });
+  await continueOrchestratedWorkflow({ cwd, runId: started.runId }, runner);
 
+  assert.equal(calls.at(-1)?.phase, "implementation");
+  assert.equal(calls.at(-1)?.executionMode, "plan");
+  assert.equal(calls.at(-1)?.cwd, cwd);
+  assert.equal(await pathExists(join(cwd, "generated.ts")), false);
+
+  await approveWorkflow({ cwd, runId: started.runId, gate: "implementation" });
+  const executed = await continueOrchestratedWorkflow({ cwd, runId: started.runId }, runner);
+  assert.equal(calls.at(-1)?.phase, "execution");
+  assert.equal(calls.at(-1)?.executionMode, "apply");
+  assert.notEqual(calls.at(-1)?.cwd, cwd);
+  assert.equal(executed.phase, "testing");
+  assert.equal(executed.status, "ready");
+  assert.match(executed.implementationDiff, /generated\.ts/);
+  assert.deepEqual(executed.changedFiles, ["generated.ts"]);
+  assert.equal(await pathExists(join(cwd, "generated.ts")), false);
+});
+
+test("testing approval promotes the reviewed patch exactly once", async () => {
+  const cwd = await tempProject();
+  await initGitRepo(cwd);
   const runner = async (input: RoleRunInput): Promise<RoleResult> => {
-    if (input.role === "implementer") {
-      await writeFile(join(input.cwd, "README.md"), "# Test Project\n\nImplemented architecture details.\n");
+    if (input.phase === "execution") {
+      await writeFile(join(input.cwd, "generated.ts"), "export const generated = true;\n");
     }
-    return {
-      role: input.role,
-      backend: input.backend,
-      summary: `${input.role} completed`,
-      markdown: `# ${input.role}\n\nDone.\n`,
-      usedFallback: false,
-    };
+    if (input.phase === "testing") {
+      await writeFile(join(input.cwd, "tested.ts"), "export const tested = true;\n");
+    }
+    return validRoleResult(input);
   };
+  const tested = await advanceApplyToTestingGate(cwd, runner);
+  const workspacePath = tested.executionWorkspace?.path;
+  assert.ok(workspacePath);
+  assert.equal(tested.phase, "testing");
+  assert.equal(tested.status, "awaiting_approval");
+  assert.match(tested.implementationDiff, /tested\.ts/);
+  assert.equal(await pathExists(join(cwd, "generated.ts")), false);
 
-  const implemented = await continueOrchestratedWorkflow({ cwd, runId: started.runId }, runner);
+  const approved = await approveOrchestratedWorkflow({
+    cwd,
+    runId: tested.runId,
+    gate: "testing",
+  });
+  assert.equal(approved.phase, "acceptance");
+  assert.equal(approved.executionWorkspace, undefined);
+  assert.equal(await readFile(join(cwd, "generated.ts"), "utf8"), "export const generated = true;\n");
+  assert.equal(await readFile(join(cwd, "tested.ts"), "utf8"), "export const tested = true;\n");
+  assert.equal(await pathExists(workspacePath), false);
 
-  assert.ok(implemented.artifacts["implementation-review"]?.endsWith("implementation-review.md"));
-  assert.match(implemented.implementationDiff, /Implemented architecture details/);
-  const review = await readFile(implemented.artifacts["implementation-review"] ?? "", "utf8");
+  const duplicate = await approveOrchestratedWorkflow({
+    cwd,
+    runId: tested.runId,
+    gate: "testing",
+  });
+  assert.equal(duplicate.phase, approved.phase);
+  assert.deepEqual(duplicate.gates, approved.gates);
+  assert.equal(duplicate.approvals.length, approved.approvals.length);
+
+  const review = await readFile(approved.artifacts["implementation-review"] ?? "", "utf8");
   assert.match(review, /Implementation Diff Review/);
   assert.match(review, /Architecture Compliance Inputs/);
   assert.match(review, /Architecture Artifact: present/);
-  assert.match(review, /Changed Files: 1/);
+  assert.match(review, /Changed Files: 2/);
   assert.match(review, /Captured Diff: present/);
   assert.match(review, /Architecture Compliance Review/);
   assert.match(review, /Needs Human Review/);
-  assert.match(review, /M README\.md/);
-  assert.match(review, /Implemented architecture details/);
+  assert.match(review, /generated\.ts/);
+});
+
+test("rejected testing returns to execution without touching the requester repository", async () => {
+  const cwd = await tempProject();
+  await initGitRepo(cwd);
+  const runner = async (input: RoleRunInput): Promise<RoleResult> => {
+    if (input.phase === "execution") {
+      await writeFile(join(input.cwd, "generated.ts"), "export const generated = true;\n");
+    }
+    return validRoleResult(input);
+  };
+  const tested = await advanceApplyToTestingGate(cwd, runner);
+  const workspacePath = tested.executionWorkspace?.path;
+  assert.ok(workspacePath);
+
+  await rejectOrchestratedWorkflow({
+    cwd,
+    runId: tested.runId,
+    gate: "testing",
+    feedback: "Revise the implementation",
+  });
+  const revised = await answerOrchestratedWorkflow({
+    cwd,
+    runId: tested.runId,
+    answer: "Keep the change isolated and revise it",
+  });
+
+  assert.equal(revised.phase, "execution");
+  assert.equal(revised.status, "ready");
+  assert.equal(revised.gates.testing, "not_started");
+  assert.equal(await pathExists(join(cwd, "generated.ts")), false);
+  assert.equal(await pathExists(workspacePath), true);
 });
 
 test("apply mode tester runs configured verification and coverage commands", async () => {
@@ -282,7 +361,7 @@ test("apply mode tester runs configured verification and coverage commands", asy
     join(cwd, ".devcrew", "config.json"),
     `${JSON.stringify({
       version: 1,
-      defaultBackend: "local",
+      defaultBackend: "codex",
       executionMode: "apply",
       workflow: {
         gates: ["requirements", "architecture", "implementation", "testing"],
@@ -293,20 +372,13 @@ test("apply mode tester runs configured verification and coverage commands", asy
     }, null, 2)}\n`,
   );
   await initGitRepo(cwd);
-
-  const started = await startOrchestratedWorkflow({
-    cwd,
-    host: "codex",
-    mode: "feature",
-    request: "Add verification evidence",
-  });
-  await approveWorkflow({ cwd, runId: started.runId, gate: "requirements" });
-  await continueOrchestratedWorkflow({ cwd, runId: started.runId });
-  await approveWorkflow({ cwd, runId: started.runId, gate: "architecture" });
-  await continueOrchestratedWorkflow({ cwd, runId: started.runId });
-  await approveWorkflow({ cwd, runId: started.runId, gate: "implementation" });
-
-  const tested = await continueOrchestratedWorkflow({ cwd, runId: started.runId });
+  const runner = async (input: RoleRunInput): Promise<RoleResult> => {
+    if (input.phase === "execution") {
+      await writeFile(join(input.cwd, "generated.ts"), "export const generated = true;\n");
+    }
+    return validRoleResult(input);
+  };
+  const tested = await advanceApplyToTestingGate(cwd, runner);
 
   assert.deepEqual(tested.verification.map((result) => result.command), [verifyCommand, coverageCommand]);
   assert.equal(tested.verification[0]?.exitCode, 0);
@@ -329,7 +401,7 @@ test("apply mode tester discovers package verification and coverage commands whe
     join(cwd, ".devcrew", "config.json"),
     `${JSON.stringify({
       version: 1,
-      defaultBackend: "local",
+      defaultBackend: "codex",
       executionMode: "apply",
       verifyCommands: [],
       workflow: {
@@ -348,20 +420,13 @@ test("apply mode tester discovers package verification and coverage commands whe
     }),
   );
   await initGitRepo(cwd);
-
-  const started = await startOrchestratedWorkflow({
-    cwd,
-    host: "codex",
-    mode: "feature",
-    request: "Discover verification commands",
-  });
-  await approveWorkflow({ cwd, runId: started.runId, gate: "requirements" });
-  await continueOrchestratedWorkflow({ cwd, runId: started.runId });
-  await approveWorkflow({ cwd, runId: started.runId, gate: "architecture" });
-  await continueOrchestratedWorkflow({ cwd, runId: started.runId });
-  await approveWorkflow({ cwd, runId: started.runId, gate: "implementation" });
-
-  const tested = await continueOrchestratedWorkflow({ cwd, runId: started.runId });
+  const runner = async (input: RoleRunInput): Promise<RoleResult> => {
+    if (input.phase === "execution") {
+      await writeFile(join(input.cwd, "generated.ts"), "export const generated = true;\n");
+    }
+    return validRoleResult(input);
+  };
+  const tested = await advanceApplyToTestingGate(cwd, runner);
 
   assert.deepEqual(tested.verification.map((result) => result.command), ["npm test", "npm run coverage"]);
   assert.equal(tested.verification[0]?.exitCode, 0);
@@ -370,7 +435,7 @@ test("apply mode tester discovers package verification and coverage commands whe
   assert.match(tested.verification[1]?.output ?? "", /auto-npm-coverage-ok/);
 });
 
-test("apply mode implementation refuses to run on a dirty user working tree", async () => {
+test("apply mode execution refuses to start from a dirty requester working tree", async () => {
   const cwd = await tempProject();
   await initGitRepo(cwd);
 
@@ -379,95 +444,27 @@ test("apply mode implementation refuses to run on a dirty user working tree", as
     host: "codex",
     mode: "feature",
     request: "Add a generated module",
-    backend: "local",
+    backend: "codex",
     executionMode: "apply",
-  });
+  }, async (input) => validRoleResult(input));
   await approveWorkflow({ cwd, runId: started.runId, gate: "requirements" });
-  await continueOrchestratedWorkflow({ cwd, runId: started.runId });
+  await continueOrchestratedWorkflow({ cwd, runId: started.runId }, async (input) => validRoleResult(input));
   await approveWorkflow({ cwd, runId: started.runId, gate: "architecture" });
+  await continueOrchestratedWorkflow({ cwd, runId: started.runId }, async (input) => validRoleResult(input));
+  await approveWorkflow({ cwd, runId: started.runId, gate: "implementation" });
   await writeFile(join(cwd, "README.md"), "# User has local edits\n");
 
-  let runnerCalled = false;
+  let executionCalled = false;
   const runner = async (input: RoleRunInput): Promise<RoleResult> => {
-    runnerCalled = true;
-    return {
-      role: input.role,
-      backend: input.backend,
-      summary: `${input.role} completed`,
-      markdown: `# ${input.role}\n\nDone.\n`,
-      usedFallback: false,
-    };
+    executionCalled = input.phase === "execution";
+    return validRoleResult(input);
   };
 
   await assert.rejects(
     () => continueOrchestratedWorkflow({ cwd, runId: started.runId }, runner),
-    /clean working tree.*README\.md/i,
+    /clean working tree/i,
   );
-  assert.equal(runnerCalled, false);
-});
-
-test("changedSinceBaseline excludes pre-existing uncommitted edits", () => {
-  const baseline = [" M existing.ts"];
-  const current = [" M existing.ts", "?? generated.ts", " M src/app.ts"];
-  assert.deepEqual(changedSinceBaseline(baseline, current), ["?? generated.ts", " M src/app.ts"]);
-});
-
-test("revertChangedFiles restores tracked files from HEAD and deletes untracked files", async () => {
-  const gitCalls: string[][] = [];
-  const removed: string[] = [];
-
-  const runGit = async (args: string[]): Promise<{ exitCode: number; stdout: string }> => {
-    gitCalls.push(args);
-    if (args[0] === "cat-file") {
-      // README.md exists in HEAD (tracked); generated.ts does not.
-      return { exitCode: args[2] === "HEAD:README.md" ? 0 : 1, stdout: "" };
-    }
-    return { exitCode: 0, stdout: "" };
-  };
-  const removeFile = async (absolutePath: string): Promise<void> => {
-    removed.push(absolutePath);
-  };
-
-  await revertChangedFiles("/repo", [" M README.md", "?? generated.ts"], { runGit, removeFile });
-
-  // The tracked file is restored from HEAD via git restore.
-  assert.ok(
-    gitCalls.some(
-      (args) => args[0] === "restore" && args[1] === "--source=HEAD" && args.at(-1) === "README.md",
-    ),
-    "expected a git restore --source=HEAD -- README.md call",
-  );
-  // The untracked file is deleted (never checked out).
-  assert.ok(!gitCalls.some((args) => args[0] === "restore" && args.at(-1) === "generated.ts"));
-  assert.equal(removed.length, 1);
-  assert.match(removed[0], /generated\.ts$/);
-});
-
-test("revertChangedFiles uses the rename destination path", async () => {
-  const gitCalls: string[][] = [];
-  const runGit = async (args: string[]): Promise<{ exitCode: number; stdout: string }> => {
-    gitCalls.push(args);
-    return { exitCode: 0, stdout: "" };
-  };
-
-  await revertChangedFiles("/repo", ["R  old.ts -> new.ts"], { runGit, removeFile: async () => {} });
-
-  assert.ok(gitCalls.some((args) => args[0] === "cat-file" && args[2] === "HEAD:new.ts"));
-  assert.ok(gitCalls.some((args) => args[0] === "restore" && args.at(-1) === "new.ts"));
-});
-
-test("revertChangedFiles throws when restoring a tracked file fails", async () => {
-  const runGit = async (args: string[]): Promise<{ exitCode: number; stdout: string }> => {
-    if (args[0] === "cat-file") {
-      return { exitCode: 0, stdout: "" };
-    }
-    return { exitCode: 128, stdout: "restore failed" };
-  };
-
-  await assert.rejects(
-    () => revertChangedFiles("/repo", [" M README.md"], { runGit, removeFile: async () => {} }),
-    /Failed to restore README\.md/,
-  );
+  assert.equal(executionCalled, false);
 });
 
 test("runShellCommand kills and reports a command that exceeds its timeout", async () => {
@@ -482,50 +479,4 @@ test("runShellCommand captures exit code and output within the timeout", async (
   const result = await runShellCommand("echo devcrew-ok", cwd, 5_000);
   assert.equal(result.exitCode, 0);
   assert.match(result.output, /devcrew-ok/);
-});
-
-test("apply mode reject rolls back implementer edits to leave a clean tree", async () => {
-  const cwd = await tempProject();
-  await initGitRepo(cwd);
-
-  const started = await startOrchestratedWorkflow({
-    cwd,
-    host: "codex",
-    mode: "feature",
-    request: "Add a generated module",
-    backend: "local",
-    executionMode: "apply",
-  });
-  await approveWorkflow({ cwd, runId: started.runId, gate: "requirements" });
-  await continueOrchestratedWorkflow({ cwd, runId: started.runId });
-  await approveWorkflow({ cwd, runId: started.runId, gate: "architecture" });
-
-  const runner = async (input: RoleRunInput): Promise<RoleResult> => {
-    if (input.role === "implementer") {
-      await writeFile(join(input.cwd, "generated.ts"), "export const generated = true;\n");
-      await writeFile(join(input.cwd, "README.md"), "# Overwritten by implementer\n");
-    }
-    return {
-      role: input.role,
-      backend: input.backend,
-      summary: `${input.role} completed`,
-      markdown: `# ${input.role}\n\nDone.\n`,
-      usedFallback: false,
-    };
-  };
-
-  const implemented = await continueOrchestratedWorkflow({ cwd, runId: started.runId }, runner);
-  assert.deepEqual(implemented.changedFiles.sort(), [" M README.md", "?? generated.ts"].sort());
-
-  const rejected = await rejectOrchestratedWorkflow({
-    cwd,
-    runId: started.runId,
-    gate: "implementation",
-    feedback: "Start over with a smaller change",
-  });
-
-  assert.deepEqual(rejected.changedFiles, []);
-  // The newly created file is removed and the tracked file is restored to HEAD.
-  await assert.rejects(() => readFile(join(cwd, "generated.ts"), "utf8"));
-  assert.equal(await readFile(join(cwd, "README.md"), "utf8"), "# Test Project\n");
 });

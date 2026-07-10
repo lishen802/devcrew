@@ -12,10 +12,10 @@ The first release is intentionally local-first. DevCrew stores workflow state an
 
 - Gated phases for requirements, architecture, implementation planning, and test reporting.
 - Two workflow modes: `feature` for existing repositories and `greenfield` for new products.
-- Safe execution modes: `plan` is the default; `apply` must be explicitly requested before implementer/tester roles can write files or run validation commands.
+- Safe execution modes: `plan` is the default; `apply` must be explicit. Implementation planning stays read-only, while implementation and testing run in a DevCrew-owned Git worktree.
 - Host-preferred backend selection: Codex runs default to Codex, Claude Code runs default to Claude.
 - Orchestrated role execution: `devcrew_start` runs the PM role, and `devcrew_continue` runs the next phase role before opening the gate.
-- Implementation review artifact: implementation gates include changed files, captured diff, and architecture compliance review notes.
+- Implementation review artifact: isolated execution records changed files, a binary-capable diff, lint evidence, and architecture compliance notes; testing refreshes the reviewed diff before promotion.
 - Repository artifacts in `.devcrew/runs/<run-id>/state.json` and `docs/devcrew/<run-id>/`.
 - Standards discovery from `.devcrew/standards.md`, `AGENTS.md`, `CLAUDE.md`, README, and common project manifests.
 - MCP tools: `devcrew_start`, `devcrew_status`, `devcrew_answer`, `devcrew_approve`, `devcrew_reject`, `devcrew_continue`, and `devcrew_artifact`.
@@ -34,7 +34,7 @@ Restart Codex, open the plugin directory, choose the DevCrew marketplace, and in
 The plugin starts the DevCrew MCP server with:
 
 ```bash
-npm exec --silent --yes --package=@shenlee/devcrew@0.1.1 -- node -e "<DevCrew CLI wrapper>" -- serve --stdio
+npm exec --silent --yes --package=@shenlee/devcrew@0.1.2 -- node -e "<DevCrew CLI wrapper>" -- serve --stdio
 ```
 
 The plugin locks the MCP server to the published npm package version, so users do not need to clone the source or build TypeScript at install time. You only need Node.js and network access the first time Codex starts the MCP server.
@@ -81,11 +81,25 @@ The agent should call `devcrew_start`, show the PM-generated requirements artifa
 
 Plugins set `DEVCREW_HOST` for host detection, so `devcrew_start` can omit `host` unless you want to override it. DevCrew records the latest run as the repository's active run, so follow-up MCP calls can omit `runId`.
 
-By default DevCrew runs in `plan` mode. To allow the implementer/tester phases to make repository changes and run configured verification commands, explicitly request apply mode:
+By default DevCrew runs in `plan` mode. To allow isolated execution to modify files and isolated testing to run configured verification commands, explicitly request apply mode:
 
 ```text
 Use DevCrew in apply mode to implement audit logging for the billing API.
 ```
+
+Apply mode follows this sequence:
+
+```text
+requirements approval
+-> architecture approval
+-> implementation plan approval
+-> isolated execution
+-> isolated testing
+-> testing approval
+-> patch promotion to requester repository
+```
+
+Apply requires a Git repository, a real Codex or Claude SDK backend, and a clean requester worktree when isolated execution starts and when the patch is promoted. After approving the implementation plan, call `devcrew_continue` once for isolated execution and again for isolated testing. The requester repository is unchanged until the testing gate is approved. Rejecting testing and answering the feedback returns the same isolated workspace to `execution` without changing the requester repository.
 
 DevCrew auto-discovers verification commands from common project manifests. The current rules prefer `package.json` scripts (`validate`, then `test`, then `typecheck`/`lint`), then fall back to `go test ./...`, `cargo test`, or `python -m pytest` when matching manifests are present.
 
@@ -119,7 +133,7 @@ For published installs, the host SDK packages are pinned optional dependencies s
 
 Public npm publishing is handled by the `npm publish` GitHub Actions workflow. It runs validation, checks the package with `npm pack --dry-run`, and publishes with npm provenance when a GitHub Release is published or the workflow is manually dispatched with `NPM_TOKEN` configured.
 
-After publishing the npm version referenced by the Codex plugin, run the real marketplace smoke test:
+After publishing `@shenlee/devcrew@0.1.2`, run the real marketplace smoke test. This is a post-publication check because the plugin is version-locked to the npm package:
 
 ```bash
 npm run smoke:codex-plugin

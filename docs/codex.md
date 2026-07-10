@@ -13,7 +13,7 @@ Restart Codex, open the plugin directory, select the DevCrew marketplace, and in
 The plugin launches the MCP server with:
 
 ```bash
-npm exec --silent --yes --package=@shenlee/devcrew@0.1.1 -- node -e "<DevCrew CLI wrapper>" -- serve --stdio
+npm exec --silent --yes --package=@shenlee/devcrew@0.1.2 -- node -e "<DevCrew CLI wrapper>" -- serve --stdio
 ```
 
 Use this path when you want to use DevCrew without cloning the repository first. The version is locked to the published npm package that matches the plugin manifest.
@@ -54,6 +54,10 @@ The DevCrew skill tells Codex to use these MCP tools:
 
 Codex sandbox and approval settings remain authoritative. DevCrew does not bypass them.
 
+Apply mode keeps implementation planning read-only. After the implementation gate is approved, call `devcrew_continue` once to run the implementer in `.devcrew/worktrees/<run-id>`, then call it again to run the tester and verification commands in that worktree. Testing approval promotes the exact reviewed patch to the requester repository. Rejecting testing and answering the feedback returns the isolated run to execution without touching the requester repository.
+
+Apply mode requires a Git repository, a clean requester worktree at execution and promotion, and a real Codex SDK backend.
+
 For apply mode, `@openai/codex-sdk` must be resolvable from the installed DevCrew package. Published DevCrew packages declare it as an optional dependency, which npm installs by default. If `devcrew doctor` reports it as missing, reinstall DevCrew with optional dependencies enabled:
 
 ```bash
@@ -62,7 +66,7 @@ npm install -g @shenlee/devcrew --include=optional
 
 ## Marketplace smoke test
 
-After publishing the npm package version referenced by the plugin, run the real marketplace smoke test:
+After publishing `@shenlee/devcrew@0.1.2`, run the real marketplace smoke test. Do not treat this as a pre-publication check because the plugin is locked to that npm version:
 
 ```bash
 npm run smoke:codex-plugin

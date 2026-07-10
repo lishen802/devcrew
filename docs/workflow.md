@@ -16,13 +16,30 @@ approval.
 
 1. `requirements`: product manager clarifies scope, users, success criteria, and non-goals.
 2. `architecture`: architect defines technical approach, interfaces, deployment notes, and review criteria.
-3. `implementation`: implementer creates the implementation plan and coding checklist. DevCrew also writes `implementation-review.md` with changed files, captured diff, and architecture compliance review prompts before opening the implementation gate.
-4. `testing`: tester records validation strategy and acceptance evidence.
-5. `acceptance`: generated after the testing gate is approved.
+3. `implementation`: implementer creates a read-only implementation plan and coding checklist. The implementation gate approves this plan, not repository changes.
+4. `execution`: internal, nongated apply phase. The implementer works in `.devcrew/worktrees/<run-id>`, and DevCrew captures changed files, a binary-capable patch, lint evidence, and `implementation-review.md`.
+5. `testing`: tester records validation and acceptance evidence. In apply mode, the tester and verification commands run in the same isolated worktree, then DevCrew refreshes the implementation diff and review before opening the testing gate.
+6. `acceptance`: generated after the testing gate is approved.
 
 `devcrew_start` runs the PM role for `requirements`. After the requester approves
 a gate, `devcrew_continue` runs the role for the next phase before setting that
 phase's gate to `pending`.
+
+Plan mode advances directly from implementation-plan approval to testing. Apply mode uses this sequence:
+
+```text
+requirements approval
+-> architecture approval
+-> implementation plan approval
+-> isolated execution
+-> isolated testing
+-> testing approval
+-> patch promotion to requester repository
+```
+
+The implementation-plan approval advances the run to `execution`. One `devcrew_continue` call runs the implementer in the isolated worktree and leaves the run at `testing/ready`; another `devcrew_continue` runs the tester and verification commands before opening the testing gate.
+
+Apply requires Git, a real Codex or Claude SDK backend, and a clean requester worktree both when execution starts and when the reviewed patch is promoted. The requester repository remains unchanged until testing approval. If testing is rejected, `devcrew_answer` records the response and returns the run to `execution/ready` with the isolated worktree intact.
 
 `devcrew_start` records the created run as the active run for the repository.
 Subsequent MCP calls can omit `runId`; DevCrew resolves it from
@@ -38,7 +55,7 @@ Each main phase has a gate:
 - `implementation`
 - `testing`
 
-The requester approves or rejects each gate. Rejection records feedback and returns the workflow to `awaiting_input`.
+The requester approves or rejects each gate. Rejection records feedback and returns the workflow to `awaiting_input`. In apply mode, rejecting testing never rolls changes back in the requester repository because no patch has been promoted yet.
 
 ## State And Artifacts
 

@@ -12,10 +12,10 @@ DevCrew 是一个面向 Codex、Claude Code 等编程 Agent 的本地工作流�
 
 - 内置阶段门禁：需求确认、架构确认、实现计划确认、测试报告确认。
 - 支持两种工作流：`feature` 用于已有项目功能开发，`greenfield` 用于从零开始的新产品。
-- 支持安全执行模式：默认是 `plan`，只有显式请求 `apply` 时，implementer/tester 阶段才允许写文件或运行验证命令。
+- 支持安全执行模式：默认是 `plan`，`apply` 必须显式开启。实现计划阶段始终只读，真正的实现和测试在 DevCrew 管理的 Git worktree 中隔离执行。
 - 默认按当前宿主选择后端：在 Codex 中优先使用 Codex，在 Claude Code 中优先使用 Claude。
 - 已接入角色编排：`devcrew_start` 会先运行 PM 角色，`devcrew_continue` 会运行下一阶段角色，然后再打开阶段门禁。
-- 实现评审产物：implementation gate 会附带 changed files、捕获的 diff 和架构符合性审查说明。
+- 实现评审产物：隔离执行会记录 changed files、支持二进制的 diff、lint 证据和架构符合性说明；测试结束后会重新生成评审 diff，再等待晋升。
 - 运行状态写入 `.devcrew/runs/<run-id>/state.json`，评审产物写入 `docs/devcrew/<run-id>/`。
 - 自动发现项目规范：`.devcrew/standards.md`、`AGENTS.md`、`CLAUDE.md`、README 以及常见项目配置文件。
 - 提供 MCP 工具：`devcrew_start`、`devcrew_status`、`devcrew_answer`、`devcrew_approve`、`devcrew_reject`、`devcrew_continue`、`devcrew_artifact`。
@@ -34,7 +34,7 @@ codex plugin marketplace add lishen802/devcrew
 插件会用下面的命令启动 DevCrew MCP 服务：
 
 ```bash
-npm exec --silent --yes --package=@shenlee/devcrew@0.1.1 -- node -e "<DevCrew CLI wrapper>" -- serve --stdio
+npm exec --silent --yes --package=@shenlee/devcrew@0.1.2 -- node -e "<DevCrew CLI wrapper>" -- serve --stdio
 ```
 
 插件会锁定到已发布的 npm 包版本，因此用户不需要克隆源码，也不需要在安装时编译 TypeScript；只需要本机有 Node.js，并且 Codex 第一次启动 MCP 服务时可以访问网络。
@@ -95,11 +95,25 @@ devcrew serve --stdio
 
 插件会设置 `DEVCREW_HOST` 用于宿主识别，因此 `devcrew_start` 可以省略 `host`，除非你需要显式覆盖。DevCrew 会把最新 run 记录为当前仓库的 active run，后续 MCP 调用可以省略 `runId`。
 
-默认情况下 DevCrew 使用安全的 `plan` 模式。如果你希望 implementer/tester 阶段真正修改仓库并运行配置好的验证命令，需要明确要求 apply 模式：
+默认情况下 DevCrew 使用安全的 `plan` 模式。如果你希望隔离执行阶段真正修改文件，并在隔离测试阶段运行配置好的验证命令，需要明确要求 apply 模式：
 
 ```text
 使用 DevCrew apply 模式帮我实现 billing API 的审计日志功能。
 ```
+
+apply 模式的固定顺序是：
+
+```text
+需求确认
+-> 架构确认
+-> 实现计划确认
+-> 隔离执行
+-> 隔离测试
+-> 测试报告确认
+-> 将补丁晋升到需求方仓库
+```
+
+apply 模式要求项目是 Git 仓库、使用真实的 Codex 或 Claude SDK 后端，并且在开始隔离执行和最终晋升补丁时，需求方工作树都必须保持干净。实现计划审批后，需要额外调用一次 `devcrew_continue` 完成隔离执行，再调用一次进入隔离测试。测试门禁批准前，需求方仓库不会出现实现改动；如果驳回测试并提交反馈答案，流程会回到同一个隔离工作树的 `execution` 阶段，不会修改需求方仓库。
 
 DevCrew 会自动从常见项目清单中发现验证命令。当前规则会优先读取 `package.json` scripts（`validate`，然后是 `test`，再到 `typecheck`/`lint`），再按项目清单回退到 `go test ./...`、`cargo test` 或 `python -m pytest`。
 
@@ -133,7 +147,7 @@ npm pack --dry-run
 
 公开 npm 发布由 `npm publish` GitHub Actions 工作流处理。发布 GitHub Release 或手动触发 workflow 时，它会先运行验证，再执行 `npm pack --dry-run` 检查包内容，最后在配置 `NPM_TOKEN` 后使用 npm provenance 发布公开包。
 
-当 Codex 插件引用的 npm 版本发布完成后，运行真实 marketplace smoke test：
+发布 `@shenlee/devcrew@0.1.2` 后，再运行真实 marketplace smoke test。由于插件锁定了 npm 版本，这是发布后的检查：
 
 ```bash
 npm run smoke:codex-plugin

@@ -64,6 +64,31 @@ test("checked-in Codex plugin locks MCP server to the published npm version", as
   assertVersionLockedMcpServer(mcp, "codex");
 });
 
+test("checked-in Codex plugin matches the shared generator", async () => {
+  const root = await tempProject();
+  const generated = await generateCodexPlugin(root);
+  const checkedIn = join(process.cwd(), "plugins", "devcrew-codex");
+  const relativeFiles = [
+    ".codex-plugin/plugin.json",
+    ".mcp.json",
+    "skills/devcrew/SKILL.md",
+    "agents/pm.toml",
+    "agents/architect.toml",
+    "agents/implementer.toml",
+    "agents/tester.toml",
+    "assets/composer-icon.png",
+    "assets/logo.png",
+  ];
+
+  for (const file of relativeFiles) {
+    assert.deepEqual(
+      await readFile(join(checkedIn, file)),
+      await readFile(join(generated.path, file)),
+      `${file} drifted from generateCodexPlugin`,
+    );
+  }
+});
+
 test("generateCodexMarketplace writes a repo marketplace entry for plugin installation", async () => {
   const root = await tempProject();
   await generateCodexPlugin(root);

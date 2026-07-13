@@ -147,6 +147,7 @@ export async function startWorkflow(input: StartWorkflowInput, options: Workflow
     },
     artifacts: {},
     roles: [],
+    pendingQuestions: [],
     answers: [],
     approvals: [],
     feedback: [],
@@ -251,6 +252,15 @@ export async function rejectWorkflow(input: RejectWorkflowInput): Promise<RunSta
 export async function answerWorkflow(input: AnswerWorkflowInput, options: WorkflowMutationOptions = {}): Promise<RunState> {
   const state = await getWorkflowStatus(input);
   const gate = gateForPhase(state.phase);
+  if (state.status === "awaiting_input" && state.pendingQuestions.length > 0 && state.phase === "requirements") {
+    state.answers.push({
+      answer: parseAnswer(input.answer),
+      createdAt: now(),
+    });
+    state.pendingQuestions = [];
+    state.status = "ready";
+    return saveState(state);
+  }
   if (state.status !== "awaiting_input" || !gate || state.gates[gate] !== "rejected") {
     throw new Error("Workflow must be awaiting_input at a rejected current gate before recording an answer");
   }

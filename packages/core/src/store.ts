@@ -39,6 +39,9 @@ export async function loadState(cwd: string, runId: string): Promise<RunState> {
         ? executionInstruction
         : undefined,
     changedFiles: Array.isArray(parsed.changedFiles) ? parsed.changedFiles : [],
+    pendingQuestions: Array.isArray(parsed.pendingQuestions)
+      ? parsed.pendingQuestions.filter((question): question is string => typeof question === "string" && question.trim().length > 0)
+      : [],
     implementationDiff: typeof parsed.implementationDiff === "string" ? parsed.implementationDiff : "",
     verification: Array.isArray(parsed.verification) ? parsed.verification : [],
     verificationStatus:

@@ -80,6 +80,21 @@ export function assertRoleSections(role: RoleResult["role"], markdown: string): 
   }
 }
 
+export function extractOpenQuestions(markdown: string): string[] {
+  const match = /^##\s+Open Questions\s*$(.*?)(?=^##\s|(?![\s\S]))/ims.exec(markdown);
+  if (!match) {
+    return [];
+  }
+  const questions: string[] = [];
+  for (const line of match[1].split("\n")) {
+    const question = /^\s*[-*]\s+(.+?)\s*$/u.exec(line)?.[1]?.trim();
+    if (question && !/^(none|n\/a|no open questions)\.?$/i.test(question)) {
+      questions.push(question);
+    }
+  }
+  return questions;
+}
+
 export function renderRolePrompt(input: Omit<RoleRunInput, "backend" | "cwd">): string {
   const executionMode = input.executionMode ?? "plan";
   const answers = input.answers ?? [];
@@ -420,6 +435,7 @@ export async function runRole(input: RoleRunInput, deps: RunRoleDeps = {}): Prom
       summary: `${input.role} produced ${title} using the ${input.backend} SDK.`,
       markdown,
       usedFallback: false,
+      questions: input.role === "pm" ? extractOpenQuestions(markdown) : undefined,
     };
   } catch (error) {
     const reason = errorMessage(error);

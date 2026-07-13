@@ -108,6 +108,44 @@ test("startOrchestratedWorkflow runs the PM role before opening the requirements
   assert.match(requirements, /Add billing export/);
 });
 
+test("PM questions move the workflow to awaiting_input until the requester responds", async () => {
+  const cwd = await tempProject();
+  let pmCalls = 0;
+  let receivedAnswers: string[] | undefined;
+  const runner = async (input: RoleRunInput): Promise<RoleResult> => {
+    if (input.role === "pm") {
+      pmCalls += 1;
+      receivedAnswers = input.answers;
+      return {
+        ...validRoleResult(input),
+        questions: pmCalls === 1 ? ["Which billing export formats are required?"] : [],
+      };
+    }
+    return validRoleResult(input);
+  };
+
+  const started = await startOrchestratedWorkflow({
+    cwd,
+    host: "codex",
+    mode: "feature",
+    request: "Add billing export",
+    backend: "codex",
+  }, runner);
+  assert.equal(started.status, "awaiting_input");
+  assert.equal(started.gates.requirements, "not_started");
+  assert.deepEqual(started.pendingQuestions, ["Which billing export formats are required?"]);
+
+  const answered = await answerOrchestratedWorkflow({
+    cwd,
+    runId: started.runId,
+    answer: "CSV and JSON are required.",
+  }, runner);
+  assert.equal(answered.status, "awaiting_approval");
+  assert.equal(answered.gates.requirements, "pending");
+  assert.deepEqual(answered.pendingQuestions, []);
+  assert.deepEqual(receivedAnswers, ["CSV and JSON are required."]);
+});
+
 test("continueOrchestratedWorkflow runs the phase role and writes its markdown artifact", async () => {
   const cwd = await tempProject();
   const started = await startWorkflow({

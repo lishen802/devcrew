@@ -93,6 +93,7 @@ export interface RoleResult {
   summary: string;
   markdown: string;
   usedFallback: boolean;
+  questions?: string[];
 }
 
 export interface WorkflowFeedback {
@@ -157,6 +158,7 @@ export interface RunState {
   gates: Record<GateName, GateStatus>;
   artifacts: Partial<Record<ArtifactName, string>>;
   roles: RoleResult[];
+  pendingQuestions: string[];
   answers: WorkflowAnswer[];
   approvals: WorkflowApproval[];
   feedback: WorkflowFeedback[];

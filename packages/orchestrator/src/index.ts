@@ -448,6 +448,12 @@ async function runCurrentPhaseRole(state: RunState, runner: RoleRunner = runRole
   state.roles.push({ ...result, markdown });
   state.artifacts[artifact] = await writeMarkdownArtifact(state, artifact, markdown);
   state.executionInstruction = undefined;
+  if (state.phase === "requirements" && result.questions && result.questions.length > 0) {
+    state.pendingQuestions = result.questions;
+    state.gates.requirements = "not_started";
+    state.status = "awaiting_input";
+    return saveState(state);
+  }
   if (applyingTesting) {
     setTestingGateFromVerification(state);
   } else {

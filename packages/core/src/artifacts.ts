@@ -10,6 +10,7 @@ function headingForArtifact(name: ArtifactName): string {
     architecture: "Architecture",
     "implementation-plan": "Implementation Plan",
     "implementation-review": "Implementation Review",
+    "architecture-review": "Architecture Review",
     "test-report": "Test Report",
     acceptance: "Acceptance",
   }[name];
@@ -122,6 +123,10 @@ export function renderArtifact(name: ArtifactName, state: RunState): string {
 
   if (name === "implementation-review") {
     return `${common}${workflowContextBlock(state)}\n## Implementation Diff Review\n\n### Changed Files\n\n${changedFilesBlock(state)}\n\n### Captured Diff\n\n${implementationDiffBlock(state)}\n\n## Lint Results\n\n${lintResultsBlock(state)}\n\n## Architecture Compliance Inputs\n\n${architectureComplianceInputsBlock(state)}\n\n## Architecture Compliance Review\n\nStatus: ${architectureComplianceStatus(state)}\n\n- Confirm changed files map back to the approved architecture artifact.\n- Confirm public interfaces, data flow, and deployment assumptions remain consistent with the architecture.\n- Confirm implementation scope does not include unapproved requirements or unrelated refactors.\n- Record any mismatch as rejection feedback before approving the implementation gate.\n`;
+  }
+
+  if (name === "architecture-review") {
+    return `${common}${workflowContextBlock(state)}\n## Technical Decisions\n\nReview the captured implementation diff against the approved architecture. State whether the implementation keeps its approved interfaces, data flow, deployment, and rollback assumptions.\n\n## Interface Contracts\n\nIdentify each changed public interface and whether it conforms to the approved architecture artifact.\n\n## Data Flow and Deployment\n\nReview the implementation diff for data-flow, deployment, migration, and rollback deviations.\n\n## Architecture Review Checklist\n\n- Review the captured implementation diff and changed-files list.\n- Trace each material change to an approved architectural decision.\n- Record any mismatch as rejection feedback before the testing phase begins.\n`;
   }
 
   if (name === "test-report") {

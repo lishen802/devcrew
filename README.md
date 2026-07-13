@@ -94,6 +94,7 @@ requirements approval
 -> architecture approval
 -> implementation plan approval
 -> isolated execution
+-> architecture review approval
 -> isolated testing
 -> testing approval
 -> patch promotion to requester repository
@@ -112,7 +113,7 @@ You can override discovery with explicit commands in `.devcrew/config.json`:
   "executionMode": "plan",
   "verifyCommands": ["npm run validate"],
   "workflow": {
-    "gates": ["requirements", "architecture", "implementation", "testing"],
+    "gates": ["requirements", "architecture", "implementation", "implementation-review", "testing"],
     "artifactDirectory": "docs/devcrew"
   }
 }

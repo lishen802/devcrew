@@ -73,6 +73,8 @@ async function advanceApplyToTestingGate(
   await continueOrchestratedWorkflow({ cwd, runId: started.runId }, runner);
   await approveWorkflow({ cwd, runId: started.runId, gate: "implementation" });
   await continueOrchestratedWorkflow({ cwd, runId: started.runId }, runner);
+  await continueOrchestratedWorkflow({ cwd, runId: started.runId }, runner);
+  await approveWorkflow({ cwd, runId: started.runId, gate: "implementation-review" });
   return continueOrchestratedWorkflow({ cwd, runId: started.runId }, runner);
 }
 
@@ -266,11 +268,18 @@ test("apply mode plans read-only before executing in a worktree", async () => {
   assert.equal(calls.at(-1)?.phase, "execution");
   assert.equal(calls.at(-1)?.executionMode, "apply");
   assert.notEqual(calls.at(-1)?.cwd, cwd);
-  assert.equal(executed.phase, "testing");
+  assert.equal(executed.phase, "review");
   assert.equal(executed.status, "ready");
   assert.match(executed.implementationDiff, /generated\.ts/);
   assert.deepEqual(executed.changedFiles, ["generated.ts"]);
   assert.equal(await pathExists(join(cwd, "generated.ts")), false);
+
+  const reviewed = await continueOrchestratedWorkflow({ cwd, runId: started.runId }, runner);
+  assert.equal(calls.at(-1)?.role, "architect");
+  assert.equal(calls.at(-1)?.phase, "review");
+  assert.equal(reviewed.status, "awaiting_approval");
+  assert.equal(reviewed.gates["implementation-review"], "pending");
+  assert.ok(reviewed.artifacts["architecture-review"]);
 });
 
 test("interactive-host apply waits for native host execution and records its completion", async () => {
@@ -304,14 +313,20 @@ test("interactive-host apply waits for native host execution and records its com
   assert.equal(calls.some((input) => input.phase === "execution"), false);
 
   await writeFile(join(workspacePath, "generated.ts"), "export const generated = true;\n");
-  const readyForTesting = await completeOrchestratedExecution({
+  const readyForReview = await completeOrchestratedExecution({
     cwd,
     runId: started.runId,
     summary: "Implemented generated module with the native host.",
   });
-  assert.equal(readyForTesting.phase, "testing");
-  assert.equal(readyForTesting.status, "ready");
-  assert.match(readyForTesting.implementationDiff, /generated\.ts/);
+  assert.equal(readyForReview.phase, "review");
+  assert.equal(readyForReview.status, "ready");
+  assert.match(readyForReview.implementationDiff, /generated\.ts/);
+
+  const reviewed = await continueOrchestratedWorkflow({ cwd, runId: started.runId }, runner);
+  assert.equal(reviewed.status, "awaiting_approval");
+  assert.equal(reviewed.gates["implementation-review"], "pending");
+  assert.equal(calls.at(-1)?.role, "architect");
+  await approveWorkflow({ cwd, runId: started.runId, gate: "implementation-review" });
 
   const awaitingTesting = await continueOrchestratedWorkflow({ cwd, runId: started.runId }, runner);
   assert.equal(awaitingTesting.status, "awaiting_execution");
@@ -488,6 +503,8 @@ test("rejected testing returns to execution without touching the requester repos
     return validRoleResult(input);
   };
   await continueOrchestratedWorkflow({ cwd, runId: tested.runId }, revisionRunner);
+  await continueOrchestratedWorkflow({ cwd, runId: tested.runId }, revisionRunner);
+  await approveWorkflow({ cwd, runId: tested.runId, gate: "implementation-review" });
   const retested = await continueOrchestratedWorkflow({ cwd, runId: tested.runId }, revisionRunner);
   assert.equal(retested.phase, "testing");
   assert.equal(retested.status, "awaiting_approval");

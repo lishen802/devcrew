@@ -195,6 +195,8 @@ test("MCP testing approval promotes an isolated patch once", async () => {
   await continueOrchestratedWorkflow({ cwd, runId: started.runId }, runner);
   await approveWorkflow({ cwd, runId: started.runId, gate: "implementation" });
   await continueOrchestratedWorkflow({ cwd, runId: started.runId }, runner);
+  await continueOrchestratedWorkflow({ cwd, runId: started.runId }, runner);
+  await approveWorkflow({ cwd, runId: started.runId, gate: "implementation-review" });
   const tested = await continueOrchestratedWorkflow({ cwd, runId: started.runId }, runner);
   const workspacePath = tested.executionWorkspace?.path;
   assert.ok(workspacePath);

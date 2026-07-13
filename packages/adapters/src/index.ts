@@ -140,6 +140,7 @@ function titleForPhase(phase: Phase): string {
     architecture: "Architecture",
     implementation: "Implementation Plan",
     execution: "Implementation Review",
+    review: "Architecture Review",
     testing: "Test Report",
     acceptance: "Acceptance",
     complete: "Acceptance",

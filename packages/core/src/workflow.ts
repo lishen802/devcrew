@@ -50,6 +50,8 @@ export function nextPhaseAfterGate(state: RunState, gate: GateName): RunState["p
       return "implementation";
     case "implementation":
       return state.executionMode === "apply" ? "execution" : "testing";
+    case "implementation-review":
+      return "testing";
     case "testing":
       return "acceptance";
   }
@@ -61,6 +63,7 @@ export function artifactForPhase(phase: RunState["phase"]): ArtifactName {
     architecture: "architecture",
     implementation: "implementation-plan",
     execution: "implementation-review",
+    review: "architecture-review",
     testing: "test-report",
     acceptance: "acceptance",
     complete: "acceptance",
@@ -69,7 +72,15 @@ export function artifactForPhase(phase: RunState["phase"]): ArtifactName {
 }
 
 export function gateForPhase(phase: RunState["phase"]): GateName | undefined {
-  if (phase === "requirements" || phase === "architecture" || phase === "implementation" || phase === "testing") {
+  if (phase === "review") {
+    return "implementation-review";
+  }
+  if (
+    phase === "requirements" ||
+    phase === "architecture" ||
+    phase === "implementation" ||
+    phase === "testing"
+  ) {
     return phase;
   }
   return undefined;
@@ -131,6 +142,7 @@ export async function startWorkflow(input: StartWorkflowInput, options: Workflow
       requirements: "pending",
       architecture: "not_started",
       implementation: "not_started",
+      "implementation-review": "not_started",
       testing: "not_started",
     },
     artifacts: {},

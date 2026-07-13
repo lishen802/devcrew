@@ -112,7 +112,7 @@ export function listDevCrewTools(): DevCrewTool[] {
         properties: {
           cwd: cwdProperty,
           runId: runIdProperty,
-          gate: { type: "string", enum: ["requirements", "architecture", "implementation", "testing"] },
+          gate: { type: "string", enum: ["requirements", "architecture", "implementation", "implementation-review", "testing"] },
           note: { type: "string" },
         },
       },
@@ -126,7 +126,7 @@ export function listDevCrewTools(): DevCrewTool[] {
         properties: {
           cwd: cwdProperty,
           runId: runIdProperty,
-          gate: { type: "string", enum: ["requirements", "architecture", "implementation", "testing"] },
+          gate: { type: "string", enum: ["requirements", "architecture", "implementation", "implementation-review", "testing"] },
           feedback: { type: "string" },
         },
       },
@@ -177,7 +177,7 @@ export function listDevCrewTools(): DevCrewTool[] {
           runId: runIdProperty,
           name: {
             type: "string",
-            enum: ["requirements", "architecture", "implementation-plan", "implementation-review", "test-report", "acceptance"],
+            enum: ["requirements", "architecture", "implementation-plan", "implementation-review", "architecture-review", "test-report", "acceptance"],
           },
         },
       },

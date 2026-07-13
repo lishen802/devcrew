@@ -32,6 +32,7 @@ requirements approval
 -> architecture approval
 -> implementation plan approval
 -> isolated execution
+-> implementation review approval
 -> isolated testing
 -> testing approval
 -> patch promotion to requester repository
@@ -53,6 +54,7 @@ Each main phase has a gate:
 - `requirements`
 - `architecture`
 - `implementation`
+- `implementation-review`
 - `testing`
 
 The requester approves or rejects each gate. Rejection records feedback and returns the workflow to `awaiting_input`. In apply mode, rejecting testing never rolls changes back in the requester repository because no patch has been promoted yet.
@@ -83,5 +85,6 @@ The standard artifact set is:
 - `architecture.md`
 - `implementation-plan.md`
 - `implementation-review.md`
+- `architecture-review.md`
 - `test-report.md`
 - `acceptance.md`

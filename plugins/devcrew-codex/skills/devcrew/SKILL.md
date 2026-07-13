@@ -11,8 +11,8 @@ Use the DevCrew MCP tools to manage the workflow:
 4. Use `devcrew_status` to show the current phase, pending gate, and any execution instruction.
 5. Use `devcrew_answer` when the requester gives clarification.
 6. Use `devcrew_approve` or `devcrew_reject` for each gate.
-7. Use `devcrew_continue` after approvals. For `interactive-host`, if status becomes `awaiting_execution`, perform the native-host work in the indicated worktree then call `devcrew_complete_execution`. For testing, include command, exit code, output, startedAt, and completedAt evidence.
+7. Use `devcrew_continue` after approvals. Apply runs enter an `implementation-review` gate after execution: review the architect's `architecture-review` artifact before testing. For `interactive-host`, if status becomes `awaiting_execution`, perform the native-host work in the indicated worktree then call `devcrew_complete_execution`. For testing, include command, exit code, output, startedAt, and completedAt evidence.
 8. Failed verification is not approvable. Revise through `devcrew_answer`, or use `devcrew_waive_verification` only when the requester explicitly accepts the recorded risk and provides a reason.
-9. Use `devcrew_artifact` to read generated requirements, architecture, implementation-plan, implementation-review, test-report, or acceptance files.
+9. Use `devcrew_artifact` to read generated requirements, architecture, implementation-plan, implementation-review, architecture-review, test-report, or acceptance files.
 
 Never describe a nested SDK session as inheriting the current host's approval decisions.

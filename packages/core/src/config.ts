@@ -11,7 +11,7 @@ export const DEFAULT_CONFIG: DevCrewConfig = {
   lintCommands: [],
   coverageCommands: [],
   workflow: {
-    gates: ["requirements", "architecture", "implementation", "testing"],
+    gates: ["requirements", "architecture", "implementation", "implementation-review", "testing"],
     artifactDirectory: "docs/devcrew",
   },
 };

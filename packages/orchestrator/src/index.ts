@@ -55,6 +55,7 @@ function roleForPhase(phase: Phase): RoleResult["role"] | undefined {
     architecture: "architect",
     implementation: "implementer",
     execution: "implementer",
+    review: "architect",
     testing: "tester",
   };
   return roles[phase];
@@ -379,7 +380,7 @@ async function runCurrentPhaseRole(state: RunState, runner: RoleRunner = runRole
     state.roles.push(result);
     state.executionInstruction = undefined;
     await writeImplementationReview(state);
-    state.phase = "testing";
+    state.phase = "review";
     state.status = "ready";
     return saveState(state);
   }
@@ -566,7 +567,7 @@ export async function completeOrchestratedExecution(input: CompleteExecutionInpu
     state.roles.push(hostCompletionResult(state, summary));
     state.executionInstruction = undefined;
     await writeImplementationReview(state);
-    state.phase = "testing";
+    state.phase = "review";
     state.status = "ready";
     return saveState(state);
   }

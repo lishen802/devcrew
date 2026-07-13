@@ -108,6 +108,7 @@ apply 模式的固定顺序是：
 -> 架构确认
 -> 实现计划确认
 -> 隔离执行
+-> 架构审查确认
 -> 隔离测试
 -> 测试报告确认
 -> 将补丁晋升到需求方仓库
@@ -126,7 +127,7 @@ DevCrew 会自动从常见项目清单中发现验证命令。当前规则会优
   "executionMode": "plan",
   "verifyCommands": ["npm run validate"],
   "workflow": {
-    "gates": ["requirements", "architecture", "implementation", "testing"],
+    "gates": ["requirements", "architecture", "implementation", "implementation-review", "testing"],
     "artifactDirectory": "docs/devcrew"
   }
 }

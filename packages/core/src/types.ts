@@ -8,16 +8,18 @@ export const PHASES = [
   "architecture",
   "implementation",
   "execution",
+  "review",
   "testing",
   "acceptance",
   "complete",
 ] as const;
-export const GATES = ["requirements", "architecture", "implementation", "testing"] as const;
+export const GATES = ["requirements", "architecture", "implementation", "implementation-review", "testing"] as const;
 export const ARTIFACTS = [
   "requirements",
   "architecture",
   "implementation-plan",
   "implementation-review",
+  "architecture-review",
   "test-report",
   "acceptance",
 ] as const;

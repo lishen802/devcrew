@@ -35,15 +35,15 @@ export function standardsPath(cwd: string): string {
   return join(devcrewDir(cwd), "standards.md");
 }
 
-export function docsRoot(cwd: string): string {
-  return join(cwd, "docs", "devcrew");
+export function docsRoot(cwd: string, artifactDirectory: string = "docs/devcrew"): string {
+  return join(cwd, artifactDirectory);
 }
 
-export function docsRunDir(cwd: string, runId: string): string {
-  return join(docsRoot(cwd), runId);
+export function docsRunDir(cwd: string, runId: string, artifactDirectory: string = "docs/devcrew"): string {
+  return join(docsRoot(cwd, artifactDirectory), runId);
 }
 
-export function artifactPath(cwd: string, runId: string, artifact: ArtifactName): string {
+export function artifactPath(cwd: string, runId: string, artifact: ArtifactName, artifactDirectory: string = "docs/devcrew"): string {
   const filenameByArtifact: Record<ArtifactName, string> = {
     requirements: "requirements.md",
     architecture: "architecture.md",
@@ -53,7 +53,7 @@ export function artifactPath(cwd: string, runId: string, artifact: ArtifactName)
     "test-report": "test-report.md",
     acceptance: "acceptance.md",
   };
-  return join(docsRunDir(cwd, runId), filenameByArtifact[artifact]);
+  return join(docsRunDir(cwd, runId, artifactDirectory), filenameByArtifact[artifact]);
 }
 
 export async function ensureRunDirectories(cwd: string, runId: string): Promise<void> {

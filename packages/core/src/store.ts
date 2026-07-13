@@ -24,6 +24,9 @@ export async function loadState(cwd: string, runId: string): Promise<RunState> {
     ...parsed,
     executionMode: parsed.executionMode ?? "plan",
     executionPolicy: parsed.executionPolicy ?? "interactive-host",
+    artifactDirectory: typeof parsed.artifactDirectory === "string" && parsed.artifactDirectory.trim().length > 0
+      ? parsed.artifactDirectory
+      : "docs/devcrew",
     executionWorkspace:
       executionWorkspace &&
       typeof executionWorkspace.path === "string" &&

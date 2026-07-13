@@ -82,7 +82,7 @@ function priorArtifactNamesForPhase(phase: Phase): ArtifactName[] {
 }
 
 async function writeMarkdownArtifact(state: RunState, artifact: ArtifactName, markdown: string): Promise<string> {
-  const path = artifactPath(state.cwd, state.runId, artifact);
+  const path = artifactPath(state.cwd, state.runId, artifact, state.artifactDirectory);
   await mkdir(dirname(path), { recursive: true });
   await writeFile(path, markdown, "utf8");
   return path;
@@ -367,7 +367,7 @@ async function runCurrentPhaseRole(state: RunState, runner: RoleRunner = runRole
       executionPolicy: state.executionPolicy,
       cwd: workspace.path,
       standards: state.standards.combined,
-      artifactPath: artifactPath(state.cwd, state.runId, "implementation-review"),
+      artifactPath: artifactPath(state.cwd, state.runId, "implementation-review", state.artifactDirectory),
       answers: state.answers.map((entry) => entry.answer),
       feedback: state.feedback.map((entry) => `${entry.gate}: ${entry.message}`),
       priorArtifacts: await readPriorArtifacts(state),
@@ -397,7 +397,7 @@ async function runCurrentPhaseRole(state: RunState, runner: RoleRunner = runRole
   }
 
   const artifact = artifactForPhase(state.phase);
-  const path = artifactPath(state.cwd, state.runId, artifact);
+  const path = artifactPath(state.cwd, state.runId, artifact, state.artifactDirectory);
   const applyingTesting = state.executionMode === "apply" && state.phase === "testing";
   const roleCwd = applyingTesting ? state.executionWorkspace?.path : state.cwd;
   if (!roleCwd) {

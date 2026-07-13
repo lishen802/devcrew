@@ -1,4 +1,4 @@
-import { mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -67,6 +67,36 @@ test("startWorkflow persists explicit apply execution mode", async () => {
 
   const loaded = await loadState(cwd, state.runId);
   assert.equal(loaded.executionMode, "apply");
+});
+
+test("startWorkflow writes artifacts under the configured artifact directory", async () => {
+  const cwd = await tempProject();
+  await mkdir(join(cwd, ".devcrew"), { recursive: true });
+  await writeFile(
+    join(cwd, ".devcrew", "config.json"),
+    JSON.stringify({
+      version: 1,
+      defaultBackend: "host-preferred",
+      executionMode: "plan",
+      verifyCommands: [],
+      lintCommands: [],
+      coverageCommands: [],
+      workflow: {
+        gates: ["requirements", "architecture", "implementation", "implementation-review", "testing"],
+        artifactDirectory: "artifacts/devcrew",
+      },
+    }),
+  );
+
+  const state = await startWorkflow({
+    cwd,
+    host: "codex",
+    mode: "feature",
+    request: "Store artifacts outside docs",
+  });
+
+  assert.equal(state.artifactDirectory, "artifacts/devcrew");
+  assert.match(state.artifacts.requirements ?? "", /artifacts\/devcrew\//);
 });
 
 test("apply workflows persist an explicit execution policy and reject unknown policies", async () => {

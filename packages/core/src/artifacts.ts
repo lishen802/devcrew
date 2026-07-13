@@ -139,7 +139,7 @@ export function renderArtifact(name: ArtifactName, state: RunState): string {
 }
 
 export async function writeArtifact(name: ArtifactName, state: RunState): Promise<string> {
-  const path = artifactPath(state.cwd, state.runId, name);
+  const path = artifactPath(state.cwd, state.runId, name, state.artifactDirectory);
   await mkdir(dirname(path), { recursive: true });
   await writeFile(path, renderArtifact(name, state), "utf8");
   return path;

@@ -132,6 +132,7 @@ export async function startWorkflow(input: StartWorkflowInput, options: Workflow
     mode,
     executionMode,
     executionPolicy,
+    artifactDirectory: config.workflow.artifactDirectory,
     backend,
     request,
     phase: "requirements",

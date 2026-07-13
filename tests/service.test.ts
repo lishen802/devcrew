@@ -32,10 +32,12 @@ test("MCP tool registry exposes the planned DevCrew tools", () => {
     "devcrew_answer",
     "devcrew_approve",
     "devcrew_artifact",
+    "devcrew_complete_execution",
     "devcrew_continue",
     "devcrew_reject",
     "devcrew_start",
     "devcrew_status",
+    "devcrew_waive_verification",
   ]);
 });
 
@@ -183,6 +185,7 @@ test("MCP testing approval promotes an isolated patch once", async () => {
     host: "codex",
     mode: "feature",
     executionMode: "apply",
+    executionPolicy: "headless-restricted",
     request: "Add generated code",
     backend: "codex",
   }, runner);

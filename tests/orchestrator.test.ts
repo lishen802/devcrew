@@ -10,10 +10,12 @@ import { approveWorkflow, getWorkflowStatus, rejectWorkflow, startWorkflow } fro
 import {
   answerOrchestratedWorkflow,
   approveOrchestratedWorkflow,
+  completeOrchestratedExecution,
   continueOrchestratedWorkflow,
   rejectOrchestratedWorkflow,
   runShellCommand,
   startOrchestratedWorkflow,
+  waiveOrchestratedVerification,
 } from "../packages/orchestrator/src/index.js";
 import type { RoleRunInput } from "../packages/adapters/src/index.js";
 import type { RoleResult } from "../packages/core/src/index.js";
@@ -63,6 +65,7 @@ async function advanceApplyToTestingGate(
     request: "Add generated code",
     backend: "codex",
     executionMode: "apply",
+    executionPolicy: "headless-restricted",
   }, runner);
   await approveWorkflow({ cwd, runId: started.runId, gate: "requirements" });
   await continueOrchestratedWorkflow({ cwd, runId: started.runId }, runner);
@@ -246,6 +249,7 @@ test("apply mode plans read-only before executing in a worktree", async () => {
     request: "Add generated code",
     backend: "codex",
     executionMode: "apply",
+    executionPolicy: "headless-restricted",
   }, runner);
   await approveWorkflow({ cwd, runId: started.runId, gate: "requirements" });
   await continueOrchestratedWorkflow({ cwd, runId: started.runId }, runner);
@@ -267,6 +271,118 @@ test("apply mode plans read-only before executing in a worktree", async () => {
   assert.match(executed.implementationDiff, /generated\.ts/);
   assert.deepEqual(executed.changedFiles, ["generated.ts"]);
   assert.equal(await pathExists(join(cwd, "generated.ts")), false);
+});
+
+test("interactive-host apply waits for native host execution and records its completion", async () => {
+  const cwd = await tempProject();
+  await initGitRepo(cwd);
+  const calls: RoleRunInput[] = [];
+  const runner = async (input: RoleRunInput): Promise<RoleResult> => {
+    calls.push(input);
+    return validRoleResult(input);
+  };
+  const started = await startOrchestratedWorkflow({
+    cwd,
+    host: "codex",
+    mode: "feature",
+    request: "Add a native-host generated module",
+    backend: "codex",
+    executionMode: "apply",
+    executionPolicy: "interactive-host",
+  }, runner);
+  await approveWorkflow({ cwd, runId: started.runId, gate: "requirements" });
+  await continueOrchestratedWorkflow({ cwd, runId: started.runId }, runner);
+  await approveWorkflow({ cwd, runId: started.runId, gate: "architecture" });
+  await continueOrchestratedWorkflow({ cwd, runId: started.runId }, runner);
+  await approveWorkflow({ cwd, runId: started.runId, gate: "implementation" });
+
+  const awaitingExecution = await continueOrchestratedWorkflow({ cwd, runId: started.runId }, runner);
+  const workspacePath = awaitingExecution.executionWorkspace?.path;
+  assert.ok(workspacePath);
+  assert.equal(awaitingExecution.status, "awaiting_execution");
+  assert.equal(awaitingExecution.executionInstruction?.phase, "execution");
+  assert.equal(calls.some((input) => input.phase === "execution"), false);
+
+  await writeFile(join(workspacePath, "generated.ts"), "export const generated = true;\n");
+  const readyForTesting = await completeOrchestratedExecution({
+    cwd,
+    runId: started.runId,
+    summary: "Implemented generated module with the native host.",
+  });
+  assert.equal(readyForTesting.phase, "testing");
+  assert.equal(readyForTesting.status, "ready");
+  assert.match(readyForTesting.implementationDiff, /generated\.ts/);
+
+  const awaitingTesting = await continueOrchestratedWorkflow({ cwd, runId: started.runId }, runner);
+  assert.equal(awaitingTesting.status, "awaiting_execution");
+  assert.equal(awaitingTesting.executionInstruction?.phase, "testing");
+  assert.equal(calls.some((input) => input.phase === "testing"), false);
+
+  const tested = await completeOrchestratedExecution({
+    cwd,
+    runId: started.runId,
+    summary: "Native host test run completed.",
+    verification: [{
+      command: "npm test",
+      exitCode: 0,
+      output: "all tests passed",
+      startedAt: "2026-07-13T00:00:00.000Z",
+      completedAt: "2026-07-13T00:00:01.000Z",
+    }],
+  });
+  assert.equal(tested.status, "awaiting_approval");
+  assert.equal(tested.gates.testing, "pending");
+  assert.equal(tested.verificationStatus, "passed");
+});
+
+test("failed verification blocks promotion until an explicit waiver is recorded", async () => {
+  const cwd = await tempProject();
+  await mkdir(join(cwd, ".devcrew"), { recursive: true });
+  const failedCommand = `${process.execPath} -e "console.error('verification failed'); process.exit(1)"`;
+  await writeFile(
+    join(cwd, ".devcrew", "config.json"),
+    `${JSON.stringify({
+      version: 1,
+      defaultBackend: "codex",
+      executionMode: "apply",
+      verifyCommands: [failedCommand],
+      workflow: { gates: ["requirements", "architecture", "implementation", "testing"], artifactDirectory: "docs/devcrew" },
+    }, null, 2)}\n`,
+  );
+  await initGitRepo(cwd);
+  const runner = async (input: RoleRunInput): Promise<RoleResult> => {
+    if (input.phase === "execution") {
+      await writeFile(join(input.cwd, "generated.ts"), "export const generated = true;\n");
+    }
+    return validRoleResult(input);
+  };
+
+  const tested = await advanceApplyToTestingGate(cwd, runner);
+  assert.equal(tested.status, "awaiting_input");
+  assert.equal(tested.gates.testing, "rejected");
+  assert.equal(tested.verificationStatus, "failed");
+  const failedReport = await readFile(tested.artifacts["test-report"] ?? "", "utf8");
+  assert.match(failedReport, /## Verification Outcome\n\nStatus: failed/);
+  await assert.rejects(
+    () => approveOrchestratedWorkflow({ cwd, runId: tested.runId, gate: "testing" }),
+    /not pending approval/i,
+  );
+  assert.equal(await pathExists(join(cwd, "generated.ts")), false);
+
+  const waived = await waiveOrchestratedVerification({
+    cwd,
+    runId: tested.runId,
+    reason: "Known flaky external integration; reviewer accepts the risk.",
+  });
+  assert.equal(waived.status, "awaiting_approval");
+  assert.equal(waived.gates.testing, "pending");
+  assert.equal(waived.verificationWaiver?.reason, "Known flaky external integration; reviewer accepts the risk.");
+  const waivedReport = await readFile(waived.artifacts["test-report"] ?? "", "utf8");
+  assert.match(waivedReport, /## Verification Waiver/);
+  assert.match(waivedReport, /Known flaky external integration/);
+
+  await approveOrchestratedWorkflow({ cwd, runId: tested.runId, gate: "testing" });
+  assert.equal(await readFile(join(cwd, "generated.ts"), "utf8"), "export const generated = true;\n");
 });
 
 test("testing approval promotes the reviewed patch exactly once", async () => {

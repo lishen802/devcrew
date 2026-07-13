@@ -51,6 +51,10 @@ test("generateCodexPlugin writes a valid Codex plugin manifest and entry skill",
   const skill = await readFile(join(plugin.path, "skills", "devcrew", "SKILL.md"), "utf8");
   assert.match(skill, /devcrew_start/);
   assert.match(skill, /devcrew_approve/);
+  assert.match(skill, /devcrew_complete_execution/);
+  assert.match(skill, /devcrew_waive_verification/);
+  assert.match(skill, /headless-restricted/);
+  assert.doesNotMatch(skill, /inherits host sandbox, approval, and tool permissions/i);
   await stat(join(plugin.path, "assets", "logo.png"));
   await stat(join(plugin.path, "assets", "composer-icon.png"));
 

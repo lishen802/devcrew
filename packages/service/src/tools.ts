@@ -9,9 +9,11 @@ import {
 import {
   answerOrchestratedWorkflow,
   approveOrchestratedWorkflow,
+  completeOrchestratedExecution,
   continueOrchestratedWorkflow,
   rejectOrchestratedWorkflow,
   startOrchestratedWorkflow,
+  waiveOrchestratedVerification,
 } from "../../orchestrator/src/index.js";
 
 export interface DevCrewTool {
@@ -73,6 +75,11 @@ export function listDevCrewTools(): DevCrewTool[] {
             enum: ["plan", "apply"],
             description: "Execution mode. Defaults to plan; apply must be explicit.",
           },
+          executionPolicy: {
+            type: "string",
+            enum: ["interactive-host", "headless-restricted", "headless-unattended"],
+            description: "Apply execution policy. Defaults to interactive-host; headless policies are explicit DevCrew SDK policies.",
+          },
           request: { type: "string" },
           backend: { type: "string", enum: ["codex", "claude", "local"] },
         },
@@ -131,6 +138,32 @@ export function listDevCrewTools(): DevCrewTool[] {
         type: "object",
         required: ["cwd"],
         properties: { cwd: cwdProperty, runId: runIdProperty },
+      },
+    },
+    {
+      name: "devcrew_complete_execution",
+      description: "Record completion by the native host for an interactive-host execution or testing step.",
+      inputSchema: {
+        type: "object",
+        required: ["cwd", "summary"],
+        properties: {
+          cwd: cwdProperty,
+          runId: runIdProperty,
+          summary: { type: "string" },
+          verification: {
+            type: "array",
+            description: "Required only when completing testing: command, exitCode, output, startedAt, and completedAt for each validation command.",
+          },
+        },
+      },
+    },
+    {
+      name: "devcrew_waive_verification",
+      description: "Record a reasoned risk waiver after failed apply-mode verification, then reopen the testing gate for approval.",
+      inputSchema: {
+        type: "object",
+        required: ["cwd", "reason"],
+        properties: { cwd: cwdProperty, runId: runIdProperty, reason: { type: "string" } },
       },
     },
     {
@@ -203,6 +236,14 @@ export async function callDevCrewTool(name: string, args: Record<string, unknown
     if (name === "devcrew_continue") {
       const state = await continueOrchestratedWorkflow((await withActiveRun(args)) as never);
       return success(`${summarizeState(state)}.`, { state });
+    }
+    if (name === "devcrew_complete_execution") {
+      const state = await completeOrchestratedExecution((await withActiveRun(args)) as never);
+      return success(`${summarizeState(state)}. Native host completion recorded.`, { state });
+    }
+    if (name === "devcrew_waive_verification") {
+      const state = await waiveOrchestratedVerification((await withActiveRun(args)) as never);
+      return success(`${summarizeState(state)}. Verification waiver recorded.`, { state });
     }
     if (name === "devcrew_artifact") {
       const artifact = await getArtifact((await withActiveRun(args)) as never);

@@ -17,8 +17,8 @@ approval.
 1. `requirements`: product manager clarifies scope, users, success criteria, and non-goals.
 2. `architecture`: architect defines technical approach, interfaces, deployment notes, and review criteria.
 3. `implementation`: implementer creates a read-only implementation plan and coding checklist. The implementation gate approves this plan, not repository changes.
-4. `execution`: internal, nongated apply phase. The implementer works in `.devcrew/worktrees/<run-id>`, and DevCrew captures changed files, a binary-capable patch, lint evidence, and `implementation-review.md`.
-5. `testing`: tester records validation and acceptance evidence. In apply mode, the tester and verification commands run in the same isolated worktree, then DevCrew refreshes the implementation diff and review before opening the testing gate.
+4. `execution`: internal, nongated apply phase. `interactive-host` waits for the host-native agent to work in `.devcrew/worktrees/<run-id>` and report completion; explicit headless policies use DevCrew's SDK settings. DevCrew then captures changed files, a binary-capable patch, lint evidence when run headlessly, and `implementation-review.md`.
+5. `testing`: records validation and acceptance evidence in the same isolated worktree. Interactive-host submits command evidence through `devcrew_complete_execution`; headless policies run DevCrew-configured verification. DevCrew refreshes the implementation diff and review before opening the testing gate.
 6. `acceptance`: generated after the testing gate is approved.
 
 `devcrew_start` runs the PM role for `requirements`. After the requester approves
@@ -37,9 +37,9 @@ requirements approval
 -> patch promotion to requester repository
 ```
 
-The implementation-plan approval advances the run to `execution`. One `devcrew_continue` call runs the implementer in the isolated worktree and leaves the run at `testing/ready`; another `devcrew_continue` runs the tester and verification commands before opening the testing gate.
+The implementation-plan approval advances the run to `execution`. With the default `interactive-host` policy, each `devcrew_continue` pauses at `awaiting_execution`; the host-native agent works in the reported worktree and calls `devcrew_complete_execution`. Explicit headless policies run the corresponding SDK role and commands directly under their recorded DevCrew policy.
 
-Apply requires Git, a real Codex or Claude SDK backend, and a clean requester worktree both when execution starts and when the reviewed patch is promoted. The requester repository remains unchanged until testing approval. If testing is rejected, `devcrew_answer` records the response and returns the run to `execution/ready` with the isolated worktree intact.
+Apply requires Git and a clean requester worktree both when execution starts and when the reviewed patch is promoted. The requester repository remains unchanged until testing approval. A failed verification enters `awaiting_input`, rather than a promotable testing gate; it can be revised with `devcrew_answer` or deliberately reopened only through `devcrew_waive_verification` with a non-empty risk reason. If testing is rejected, `devcrew_answer` records the response and returns the run to `execution/ready` with the isolated worktree intact.
 
 `devcrew_start` records the created run as the active run for the repository.
 Subsequent MCP calls can omit `runId`; DevCrew resolves it from

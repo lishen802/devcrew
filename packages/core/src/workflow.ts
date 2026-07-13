@@ -17,6 +17,7 @@ import {
   parseOptionalNote,
   parseRequest,
   parseRunId,
+  parseWaiverReason,
   parseWorkflowMode,
 } from "./validation.js";
 import type {
@@ -30,6 +31,7 @@ import type {
   RunRef,
   RunState,
   StartWorkflowInput,
+  WaiveVerificationInput,
 } from "./types.js";
 
 function now(): string {
@@ -156,7 +158,12 @@ export async function getWorkflowStatus(input: RunRef): Promise<RunState> {
 
 export async function continueWorkflow(input: RunRef): Promise<RunState> {
   const state = await getWorkflowStatus(input);
-  if (state.status === "awaiting_approval" || state.status === "awaiting_input" || state.status === "complete") {
+  if (
+    state.status === "awaiting_approval" ||
+    state.status === "awaiting_input" ||
+    state.status === "awaiting_execution" ||
+    state.status === "complete"
+  ) {
     return state;
   }
 
@@ -244,6 +251,26 @@ export async function answerWorkflow(input: AnswerWorkflowInput, options: Workfl
   if (!options.skipArtifactWrite) {
     await writeCurrentArtifact(state);
   }
+  return saveState(state);
+}
+
+export async function waiveVerificationWorkflow(input: WaiveVerificationInput): Promise<RunState> {
+  const state = await getWorkflowStatus(input);
+  if (
+    state.executionMode !== "apply" ||
+    state.phase !== "testing" ||
+    state.status !== "awaiting_input" ||
+    state.gates.testing !== "rejected" ||
+    state.verificationStatus !== "failed"
+  ) {
+    throw new Error("A verification waiver is only available after failed apply-mode testing");
+  }
+  state.verificationWaiver = {
+    reason: parseWaiverReason(input.reason),
+    createdAt: now(),
+  };
+  state.gates.testing = "pending";
+  state.status = "awaiting_approval";
   return saveState(state);
 }
 

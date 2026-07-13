@@ -12,13 +12,13 @@ DevCrew 是一个面向 Codex、Claude Code 等编程 Agent 的本地工作流�
 
 - 内置阶段门禁：需求确认、架构确认、实现计划确认、测试报告确认。
 - 支持两种工作流：`feature` 用于已有项目功能开发，`greenfield` 用于从零开始的新产品。
-- 支持安全执行模式：默认是 `plan`，`apply` 必须显式开启。实现计划阶段始终只读，真正的实现和测试在 DevCrew 管理的 Git worktree 中隔离执行。
+- 支持安全执行模式：默认是 `plan`，`apply` 必须显式开启。apply 默认使用 `interactive-host`，在 DevCrew 管理的 Git worktree 中暂停并交给宿主原生 agent 执行；headless 策略使用单独声明的 SDK 权限。
 - 默认按当前宿主选择后端：在 Codex 中优先使用 Codex，在 Claude Code 中优先使用 Claude。
 - 已接入角色编排：`devcrew_start` 会先运行 PM 角色，`devcrew_continue` 会运行下一阶段角色，然后再打开阶段门禁。
 - 实现评审产物：隔离执行会记录 changed files、支持二进制的 diff、lint 证据和架构符合性说明；测试结束后会重新生成评审 diff，再等待晋升。
 - 运行状态写入 `.devcrew/runs/<run-id>/state.json`，评审产物写入 `docs/devcrew/<run-id>/`。
 - 自动发现项目规范：`.devcrew/standards.md`、`AGENTS.md`、`CLAUDE.md`、README 以及常见项目配置文件。
-- 提供 MCP 工具：`devcrew_start`、`devcrew_status`、`devcrew_answer`、`devcrew_approve`、`devcrew_reject`、`devcrew_continue`、`devcrew_artifact`。
+- 提供 MCP 工具：`devcrew_start`、`devcrew_status`、`devcrew_answer`、`devcrew_approve`、`devcrew_reject`、`devcrew_continue`、`devcrew_complete_execution`、`devcrew_waive_verification`、`devcrew_artifact`。
 - 可通过 `devcrew init` 生成 Codex 和 Claude Code 插件骨架。
 
 ## 作为 Codex 插件安装
@@ -113,7 +113,7 @@ apply 模式的固定顺序是：
 -> 将补丁晋升到需求方仓库
 ```
 
-apply 模式要求项目是 Git 仓库、使用真实的 Codex 或 Claude SDK 后端，并且在开始隔离执行和最终晋升补丁时，需求方工作树都必须保持干净。实现计划审批后，需要额外调用一次 `devcrew_continue` 完成隔离执行，再调用一次进入隔离测试。测试门禁批准前，需求方仓库不会出现实现改动；如果驳回测试并提交反馈答案，流程会回到同一个隔离工作树的 `execution` 阶段，不会修改需求方仓库。
+apply 模式要求项目是 Git 仓库，并且在开始隔离执行和最终晋升补丁时，需求方工作树都必须保持干净。默认的 `interactive-host` 不会启动嵌套 SDK：每次 `devcrew_continue` 后会在 `awaiting_execution` 等待宿主原生 agent 在指定隔离 worktree 中工作；实现完成后调用 `devcrew_complete_execution`，测试完成时还要提交命令、退出码和输出证据。显式的 `headless-restricted` 与 `headless-unattended` 才使用 DevCrew 管理的 SDK 权限，它们不会继承当前宿主的审批会话。测试门禁批准前，需求方仓库不会出现实现改动；验证失败会进入 `awaiting_input`，只有通过 `devcrew_waive_verification` 记录明确风险原因后才可重新打开审批。驳回测试并提交反馈答案会回到同一个隔离工作树的 `execution` 阶段，不会修改需求方仓库。
 
 DevCrew 会自动从常见项目清单中发现验证命令。当前规则会优先读取 `package.json` scripts（`validate`，然后是 `test`，再到 `typecheck`/`lint`），再按项目清单回退到 `go test ./...`、`cargo test` 或 `python -m pytest`。
 
@@ -141,7 +141,7 @@ npm run validate
 npm pack --dry-run
 ```
 
-当前适配器在未安装 Codex SDK 或 Claude SDK 时会使用确定性的本地 fallback 输出。这样可以保证测试和演示稳定，同时保留接入真实宿主 SDK 的边界。即使在 `apply` 模式下，DevCrew 仍然继承宿主的 sandbox、审批和工具权限。
+当前适配器在未安装 Codex SDK 或 Claude SDK 时会使用确定性的本地 fallback 输出。这样可以保证测试和演示稳定，同时保留接入真实宿主 SDK 的边界。嵌套 SDK 的 apply 运行使用记录在状态中的 DevCrew headless 策略，不会继承当前宿主的 sandbox、审批或工具会话。
 
 对于发布安装，宿主 SDK 包会作为精确锁定的 optional dependencies 随 DevCrew 一起安装，因此锁定版本的 `npm exec --package=@shenlee/devcrew@<version>` wrapper 可以从 DevCrew 包自身解析这些 SDK。plan 模式仍允许 deterministic fallback；但 apply 模式在选定宿主 SDK 不可用时会直接失败，并给出明确的 SDK 解析错误。
 

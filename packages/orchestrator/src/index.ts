@@ -21,9 +21,11 @@ import {
   saveState,
   startWorkflow,
   validateWorkflowApproval,
+  waiveVerificationWorkflow,
   type AnswerWorkflowInput,
   type ApproveWorkflowInput,
   type ArtifactName,
+  type CompleteExecutionInput,
   type Phase,
   type RejectWorkflowInput,
   type RoleResult,
@@ -31,6 +33,8 @@ import {
   type RunState,
   type StartWorkflowInput,
   type VerificationResult,
+  type VerificationStatus,
+  type WaiveVerificationInput,
 } from "../../core/src/index.js";
 import {
   captureExecutionChanges,
@@ -225,9 +229,97 @@ function verificationBlock(results: VerificationResult[]): string {
     .join("\n\n");
 }
 
+function verificationStatusFor(results: VerificationResult[]): VerificationStatus {
+  if (results.length === 0) {
+    return "not_run";
+  }
+  return results.every((result) => result.exitCode === 0) ? "passed" : "failed";
+}
+
+function setTestingGateFromVerification(state: RunState): void {
+  if (state.verificationStatus === "failed") {
+    state.gates.testing = "rejected";
+    state.status = "awaiting_input";
+    state.feedback.push({
+      gate: "testing",
+      message: "Automated verification failed. Inspect the test report, revise the implementation, or record an explicit verification waiver with its reason.",
+      createdAt: now(),
+    });
+    return;
+  }
+  state.gates.testing = "pending";
+  state.status = "awaiting_approval";
+}
+
+function executionInstructions(state: RunState, phase: "execution" | "testing", workspacePath: string): string {
+  if (phase === "execution") {
+    return `Use the native ${state.host} host agent to implement the approved change in ${workspacePath}. Do not modify the requester checkout at ${state.cwd}. When complete, call devcrew_complete_execution with a concise summary.`;
+  }
+  return `Use the native ${state.host} host agent to validate the approved change in ${workspacePath}. Then call devcrew_complete_execution with a concise summary and each command's exit code and output.`;
+}
+
+function hostCompletionResult(state: RunState, summary: string): RoleResult {
+  const role = state.phase === "execution" ? "implementer" : "tester";
+  const artifact = artifactForPhase(state.phase);
+  return {
+    role,
+    backend: state.backend,
+    summary: `${role} completed through the native ${state.host} host: ${summary}`,
+    markdown: `${renderArtifact(artifact, state).trim()}\n\n## Native Host Summary\n\n${summary}\n`,
+    usedFallback: false,
+  };
+}
+
+function parseCompletionSummary(value: unknown): string {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    throw new Error("summary must be a non-empty string");
+  }
+  return value.trim();
+}
+
+function parseCompletionVerification(value: unknown): VerificationResult[] {
+  if (value === undefined) {
+    return [];
+  }
+  if (!Array.isArray(value)) {
+    throw new Error("verification must be an array");
+  }
+  return value.map((entry, index) => {
+    if (
+      !entry ||
+      typeof entry !== "object" ||
+      typeof entry.command !== "string" ||
+      entry.command.trim().length === 0 ||
+      !Number.isInteger(entry.exitCode) ||
+      typeof entry.output !== "string" ||
+      typeof entry.startedAt !== "string" ||
+      typeof entry.completedAt !== "string"
+    ) {
+      throw new Error(`verification[${index}] must include command, integer exitCode, output, startedAt, and completedAt`);
+    }
+    return {
+      command: entry.command.trim(),
+      exitCode: entry.exitCode,
+      output: entry.output,
+      startedAt: entry.startedAt,
+      completedAt: entry.completedAt,
+    };
+  });
+}
+
 function appendExecutionSections(artifact: ArtifactName, markdown: string, state: RunState): string {
-  if (artifact === "test-report" && !markdown.includes("## Acceptance Evidence")) {
-    return `${markdown.trim()}\n\n## Acceptance Evidence\n\n${verificationBlock(state.verification)}\n`;
+  if (artifact === "test-report") {
+    let content = markdown.trim();
+    if (!content.includes("## Acceptance Evidence")) {
+      content += `\n\n## Acceptance Evidence\n\n${verificationBlock(state.verification)}`;
+    }
+    if (!content.includes("## Verification Outcome")) {
+      content += `\n\n## Verification Outcome\n\nStatus: ${state.verificationStatus}`;
+    }
+    if (state.verificationWaiver && !content.includes("## Verification Waiver")) {
+      content += `\n\n## Verification Waiver\n\nReason: ${state.verificationWaiver.reason}\nRecorded At: ${state.verificationWaiver.createdAt}`;
+    }
+    return `${content}\n`;
   }
   return markdown;
 }
@@ -248,8 +340,21 @@ async function runCurrentPhaseRole(state: RunState, runner: RoleRunner = runRole
     const workspace = await ensureExecutionWorkspace(state);
     state.executionWorkspace = workspace;
     state.verification = [];
+    state.verificationStatus = "not_run";
+    delete state.verificationWaiver;
     delete state.artifacts["test-report"];
     await saveState(state);
+
+    if (state.executionPolicy === "interactive-host") {
+      state.executionInstruction = {
+        phase: "execution",
+        workspacePath: workspace.path,
+        instructions: executionInstructions(state, "execution", workspace.path),
+        createdAt: now(),
+      };
+      state.status = "awaiting_execution";
+      return saveState(state);
+    }
 
     const result = await runner({
       backend: state.backend,
@@ -258,6 +363,7 @@ async function runCurrentPhaseRole(state: RunState, runner: RoleRunner = runRole
       request: state.request,
       mode: state.mode,
       executionMode: "apply",
+      executionPolicy: state.executionPolicy,
       cwd: workspace.path,
       standards: state.standards.combined,
       artifactPath: artifactPath(state.cwd, state.runId, "implementation-review"),
@@ -271,6 +377,7 @@ async function runCurrentPhaseRole(state: RunState, runner: RoleRunner = runRole
     state.changedFiles = captured.changedFiles;
     state.implementationDiff = captured.patch;
     state.roles.push(result);
+    state.executionInstruction = undefined;
     await writeImplementationReview(state);
     state.phase = "testing";
     state.status = "ready";
@@ -297,6 +404,17 @@ async function runCurrentPhaseRole(state: RunState, runner: RoleRunner = runRole
   }
   state.roles.push(conductorDecision(state, role, gate));
 
+  if (applyingTesting && state.executionPolicy === "interactive-host") {
+    state.executionInstruction = {
+      phase: "testing",
+      workspacePath: roleCwd,
+      instructions: executionInstructions(state, "testing", roleCwd),
+      createdAt: now(),
+    };
+    state.status = "awaiting_execution";
+    return saveState(state);
+  }
+
   const result = await runner({
     backend: state.backend,
     role,
@@ -304,6 +422,7 @@ async function runCurrentPhaseRole(state: RunState, runner: RoleRunner = runRole
     request: state.request,
     mode: state.mode,
     executionMode: state.executionMode,
+    executionPolicy: state.executionPolicy,
     cwd: roleCwd,
     standards: state.standards.combined,
     artifactPath: path,
@@ -314,6 +433,7 @@ async function runCurrentPhaseRole(state: RunState, runner: RoleRunner = runRole
 
   if (applyingTesting && state.executionWorkspace) {
     state.verification = await runConfiguredVerification(state, roleCwd);
+    state.verificationStatus = verificationStatusFor(state.verification);
     const captured = await captureExecutionChanges(state.executionWorkspace);
     state.changedFiles = captured.changedFiles;
     state.implementationDiff = captured.patch;
@@ -326,8 +446,13 @@ async function runCurrentPhaseRole(state: RunState, runner: RoleRunner = runRole
   const markdown = appendExecutionSections(artifact, baseMarkdown, state);
   state.roles.push({ ...result, markdown });
   state.artifacts[artifact] = await writeMarkdownArtifact(state, artifact, markdown);
-  state.gates[gate] = "pending";
-  state.status = "awaiting_approval";
+  state.executionInstruction = undefined;
+  if (applyingTesting) {
+    setTestingGateFromVerification(state);
+  } else {
+    state.gates[gate] = "pending";
+    state.status = "awaiting_approval";
+  }
   return saveState(state);
 }
 
@@ -338,7 +463,12 @@ export async function startOrchestratedWorkflow(input: StartWorkflowInput, runne
 
 export async function continueOrchestratedWorkflow(input: RunRef, runner: RoleRunner = runRole): Promise<RunState> {
   const state = await getWorkflowStatus(input);
-  if (state.status === "awaiting_approval" || state.status === "awaiting_input" || state.status === "complete") {
+  if (
+    state.status === "awaiting_approval" ||
+    state.status === "awaiting_input" ||
+    state.status === "awaiting_execution" ||
+    state.status === "complete"
+  ) {
     return state;
   }
 
@@ -377,6 +507,9 @@ export async function approveOrchestratedWorkflow(input: ApproveWorkflowInput): 
     return cleanupAfterApproval(before);
   }
   if (promotingTesting) {
+    if (before.verificationStatus === "failed" && !before.verificationWaiver) {
+      throw new Error("Failed verification cannot be promoted without an explicit verification waiver");
+    }
     await promoteExecutionChanges(before);
     let approved: RunState;
     try {
@@ -394,6 +527,67 @@ export async function approveOrchestratedWorkflow(input: ApproveWorkflowInput): 
   }
 
   return approveWorkflow(input);
+}
+
+export async function waiveOrchestratedVerification(input: WaiveVerificationInput): Promise<RunState> {
+  const state = await waiveVerificationWorkflow(input);
+  const reportPath = state.artifacts["test-report"];
+  if (reportPath) {
+    const report = await readFile(reportPath, "utf8");
+    await writeFile(reportPath, appendExecutionSections("test-report", report, state), "utf8");
+  }
+  return state;
+}
+
+export async function completeOrchestratedExecution(input: CompleteExecutionInput): Promise<RunState> {
+  const state = await getWorkflowStatus(input);
+  const instruction = state.executionInstruction;
+  if (
+    state.executionMode !== "apply" ||
+    state.executionPolicy !== "interactive-host" ||
+    state.status !== "awaiting_execution" ||
+    !instruction ||
+    instruction.phase !== state.phase ||
+    !state.executionWorkspace ||
+    instruction.workspacePath !== state.executionWorkspace.path
+  ) {
+    throw new Error("DevCrew is not awaiting an interactive-host execution completion");
+  }
+  const summary = parseCompletionSummary(input.summary);
+
+  if (state.phase === "execution") {
+    if (input.verification !== undefined) {
+      throw new Error("verification can only be submitted after interactive-host testing");
+    }
+    const captured = await captureExecutionChanges(state.executionWorkspace);
+    state.changedFiles = captured.changedFiles;
+    state.implementationDiff = captured.patch;
+    state.lintResults = [];
+    state.roles.push(hostCompletionResult(state, summary));
+    state.executionInstruction = undefined;
+    await writeImplementationReview(state);
+    state.phase = "testing";
+    state.status = "ready";
+    return saveState(state);
+  }
+
+  if (state.phase !== "testing") {
+    throw new Error(`Cannot complete interactive-host work during ${state.phase}`);
+  }
+  state.verification = parseCompletionVerification(input.verification);
+  state.verificationStatus = verificationStatusFor(state.verification);
+  const captured = await captureExecutionChanges(state.executionWorkspace);
+  state.changedFiles = captured.changedFiles;
+  state.implementationDiff = captured.patch;
+  await writeImplementationReview(state);
+  const result = hostCompletionResult(state, summary);
+  const artifact = artifactForPhase(state.phase);
+  const markdown = appendExecutionSections(artifact, result.markdown, state);
+  state.roles.push({ ...result, markdown });
+  state.artifacts[artifact] = await writeMarkdownArtifact(state, artifact, markdown);
+  state.executionInstruction = undefined;
+  setTestingGateFromVerification(state);
+  return saveState(state);
 }
 
 export async function rejectOrchestratedWorkflow(input: RejectWorkflowInput): Promise<RunState> {

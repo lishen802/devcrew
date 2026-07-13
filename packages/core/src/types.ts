@@ -32,7 +32,7 @@ export type Phase = (typeof PHASES)[number];
 export type GateName = (typeof GATES)[number];
 export type ArtifactName = (typeof ARTIFACTS)[number];
 export type GateStatus = "not_started" | "pending" | "approved" | "rejected";
-export type RunStatus = "ready" | "awaiting_input" | "awaiting_approval" | "complete";
+export type RunStatus = "ready" | "awaiting_input" | "awaiting_approval" | "awaiting_execution" | "complete";
 
 export interface RoleSection {
   heading: string;
@@ -110,6 +110,11 @@ export interface WorkflowAnswer {
   createdAt: string;
 }
 
+export interface VerificationWaiver {
+  reason: string;
+  createdAt: string;
+}
+
 // Reused for both verification and lint results — the command shape is identical.
 export interface VerificationResult {
   command: string;
@@ -124,6 +129,13 @@ export interface ExecutionWorkspace {
   baseCommit: string;
 }
 
+export interface ExecutionInstruction {
+  phase: "execution" | "testing";
+  workspacePath: string;
+  instructions: string;
+  createdAt: string;
+}
+
 export interface RunState {
   version: 1;
   runId: string;
@@ -133,6 +145,7 @@ export interface RunState {
   executionMode: ExecutionMode;
   executionPolicy: ExecutionPolicy;
   executionWorkspace?: ExecutionWorkspace;
+  executionInstruction?: ExecutionInstruction;
   backend: BackendName;
   request: string;
   phase: Phase;
@@ -150,6 +163,7 @@ export interface RunState {
   implementationDiff: string;
   verification: VerificationResult[];
   verificationStatus: VerificationStatus;
+  verificationWaiver?: VerificationWaiver;
   // VerificationResult is reused for lint output — same shape, different semantics.
   lintResults: VerificationResult[];
 }
@@ -181,6 +195,15 @@ export interface RejectWorkflowInput extends RunRef {
 
 export interface AnswerWorkflowInput extends RunRef {
   answer: string;
+}
+
+export interface WaiveVerificationInput extends RunRef {
+  reason: string;
+}
+
+export interface CompleteExecutionInput extends RunRef {
+  summary: string;
+  verification?: VerificationResult[];
 }
 
 export interface ArtifactRef extends RunRef {

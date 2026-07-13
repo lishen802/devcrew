@@ -18,6 +18,8 @@ export async function loadState(cwd: string, runId: string): Promise<RunState> {
   const raw = await readFile(statePath(cwd, runId), "utf8");
   const parsed = JSON.parse(raw) as RunState;
   const executionWorkspace = parsed.executionWorkspace;
+  const executionInstruction = parsed.executionInstruction;
+  const verificationWaiver = parsed.verificationWaiver;
   return {
     ...parsed,
     executionMode: parsed.executionMode ?? "plan",
@@ -28,11 +30,25 @@ export async function loadState(cwd: string, runId: string): Promise<RunState> {
       typeof executionWorkspace.baseCommit === "string"
         ? executionWorkspace
         : undefined,
+    executionInstruction:
+      executionInstruction &&
+      (executionInstruction.phase === "execution" || executionInstruction.phase === "testing") &&
+      typeof executionInstruction.workspacePath === "string" &&
+      typeof executionInstruction.instructions === "string" &&
+      typeof executionInstruction.createdAt === "string"
+        ? executionInstruction
+        : undefined,
     changedFiles: Array.isArray(parsed.changedFiles) ? parsed.changedFiles : [],
     implementationDiff: typeof parsed.implementationDiff === "string" ? parsed.implementationDiff : "",
     verification: Array.isArray(parsed.verification) ? parsed.verification : [],
     verificationStatus:
       parsed.verificationStatus === "passed" || parsed.verificationStatus === "failed" ? parsed.verificationStatus : "not_run",
+    verificationWaiver:
+      verificationWaiver &&
+      typeof verificationWaiver.reason === "string" &&
+      typeof verificationWaiver.createdAt === "string"
+        ? verificationWaiver
+        : undefined,
     lintResults: Array.isArray(parsed.lintResults) ? parsed.lintResults : [],
   };
 }

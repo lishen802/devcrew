@@ -50,11 +50,13 @@ The DevCrew skill tells Codex to use these MCP tools:
 - `devcrew_approve`
 - `devcrew_reject`
 - `devcrew_continue`
+- `devcrew_complete_execution`
+- `devcrew_waive_verification`
 - `devcrew_artifact`
 
-Codex sandbox and approval settings remain authoritative. DevCrew does not bypass them.
+The default apply policy is `interactive-host`: Codex performs the implementation and testing with its native controls. A DevCrew nested SDK is not used in this path. Explicit `headless-restricted` and `headless-unattended` policies are separate DevCrew policies and do not inherit the current Codex approval session.
 
-Apply mode keeps implementation planning read-only. After the implementation gate is approved, call `devcrew_continue` once to run the implementer in `.devcrew/worktrees/<run-id>`, then call it again to run the tester and verification commands in that worktree. Testing approval promotes the exact reviewed patch to the requester repository. Rejecting testing and answering the feedback returns the isolated run to execution without touching the requester repository.
+Apply mode keeps implementation planning read-only. With `interactive-host`, after the implementation gate is approved, call `devcrew_continue`; DevCrew creates `.devcrew/worktrees/<run-id>` and waits at `awaiting_execution`. Use Codex natively in that worktree, then call `devcrew_complete_execution`. Repeat for testing and include command, exit-code, and output evidence. A failed verification cannot open the testing gate; revise it or record an explicit reason through `devcrew_waive_verification`. Testing approval promotes the exact reviewed patch to the requester repository.
 
 Apply mode requires a Git repository, a clean requester worktree at execution and promotion, and a real Codex SDK backend.
 

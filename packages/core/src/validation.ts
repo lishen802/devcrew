@@ -83,3 +83,7 @@ export function parseFeedback(value: unknown): string {
 export function parseAnswer(value: unknown): string {
   return assertString(value, "answer");
 }
+
+export function parseWaiverReason(value: unknown): string {
+  return assertString(value, "reason");
+}

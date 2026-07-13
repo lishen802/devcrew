@@ -60,6 +60,13 @@ function verificationBlock(state: RunState): string {
     .join("\n\n");
 }
 
+function verificationWaiverBlock(state: RunState): string {
+  if (!state.verificationWaiver) {
+    return "No verification waiver has been recorded.";
+  }
+  return `Reason: ${state.verificationWaiver.reason}\nRecorded At: ${state.verificationWaiver.createdAt}`;
+}
+
 function lintResultsBlock(state: RunState): string {
   if (state.lintResults.length === 0) {
     return "No lint or format commands have been executed.";
@@ -99,7 +106,7 @@ function architectureComplianceStatus(state: RunState): string {
 
 export function renderArtifact(name: ArtifactName, state: RunState): string {
   const title = headingForArtifact(name);
-  const common = `# ${title}\n\nRun: ${state.runId}\nMode: ${state.mode}\nExecution Mode: ${state.executionMode}\nHost: ${state.host}\nBackend: ${state.backend}\nRequest: ${state.request}\n\n`;
+  const common = `# ${title}\n\nRun: ${state.runId}\nMode: ${state.mode}\nExecution Mode: ${state.executionMode}\nExecution Policy: ${state.executionPolicy}\nVerification Status: ${state.verificationStatus}\nHost: ${state.host}\nBackend: ${state.backend}\nRequest: ${state.request}\n\n`;
 
   if (name === "requirements") {
     return `${common}## Functional Scope\n\n### In Scope\n\n- Capture the requested outcome in user-facing terms.\n\n### Out of Scope\n\n- Make explicit what is intentionally excluded before implementation.\n\n## Users and Scenarios\n\n- Identify the primary users and their key scenarios.\n\n## Acceptance Criteria\n\n- Express each criterion as Given / When / Then so it stays testable.\n\n## Priorities\n\n- Classify each requirement as Must / Should / Could / Won't (MoSCoW).\n\n## Current Requester Answers\n\n${answerBlock(state)}\n\n## Discovered Standards\n\n${standardsExcerpt(state)}\n\n## Open Questions\n\n- Confirm primary users and success criteria.\n- Confirm scope boundaries and non-goals.\n- Confirm deployment or environment constraints.\n\n## Rejection Feedback\n\n${feedbackBlock(state)}\n`;
@@ -118,10 +125,10 @@ export function renderArtifact(name: ArtifactName, state: RunState): string {
   }
 
   if (name === "test-report") {
-    return `${common}${workflowContextBlock(state)}\n## Test Cases\n\nEnumerate cases as a table covering happy, edge, failure, and regression paths.\n\n| ID | Scenario | Type | Expected |\n| --- | --- | --- | --- |\n| TC-1 | Primary success path | happy | Behaves as specified |\n| TC-2 | Boundary input | edge | Handled without error |\n| TC-3 | Invalid input | failure | Fails safely with clear error |\n\n## Coverage\n\nRun the coverage command and report the coverage summary plus any gaps. Evidence is captured under Acceptance Evidence.\n\n## Acceptance Evidence\n\n${verificationBlock(state)}\n\n## Known Risks\n\n- Host SDK availability may vary by user environment.\n- Agent permissions are inherited from the host and must be reviewed there.\n`;
+    return `${common}${workflowContextBlock(state)}\n## Test Cases\n\nEnumerate cases as a table covering happy, edge, failure, and regression paths.\n\n| ID | Scenario | Type | Expected |\n| --- | --- | --- | --- |\n| TC-1 | Primary success path | happy | Behaves as specified |\n| TC-2 | Boundary input | edge | Handled without error |\n| TC-3 | Invalid input | failure | Fails safely with clear error |\n\n## Coverage\n\nRun the coverage command and report the coverage summary plus any gaps. Evidence is captured under Acceptance Evidence.\n\n## Acceptance Evidence\n\n${verificationBlock(state)}\n\n## Verification Waiver\n\n${verificationWaiverBlock(state)}\n\n## Known Risks\n\n- Headless SDK capabilities are governed by the recorded DevCrew execution policy.\n- Interactive-host work is performed through the host's native agent controls.\n`;
   }
 
-  return `${common}${workflowContextBlock(state)}\n## Acceptance Summary\n\nThe requester approved requirements, architecture, implementation planning, and test reporting gates for this run.\n\n## Approved Gates\n\n${Object.entries(state.gates)
+  return `${common}${workflowContextBlock(state)}\n## Acceptance Summary\n\nThe requester approved requirements, architecture, implementation planning, and test reporting gates for this run.\n\n## Verification Waiver\n\n${verificationWaiverBlock(state)}\n\n## Approved Gates\n\n${Object.entries(state.gates)
     .map(([gate, status]) => `- ${gate}: ${status}`)
     .join("\n")}\n`;
 }

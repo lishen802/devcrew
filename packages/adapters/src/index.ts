@@ -1,5 +1,15 @@
 import { DEVCREW_NPM_PACKAGE, ROLE_SECTIONS } from "../../core/src/index.js";
-import type { ArtifactName, BackendName, ExecutionMode, Host, Phase, RoleResult, RunState, WorkflowMode } from "../../core/src/index.js";
+import type {
+  ArtifactName,
+  BackendName,
+  ExecutionMode,
+  ExecutionPolicy,
+  Host,
+  Phase,
+  RoleResult,
+  RunState,
+  WorkflowMode,
+} from "../../core/src/index.js";
 
 export interface BackendResolutionInput {
   host: Host;
@@ -13,6 +23,7 @@ export interface RoleRunInput {
   request: string;
   mode: WorkflowMode;
   executionMode?: ExecutionMode;
+  executionPolicy?: ExecutionPolicy;
   cwd: string;
   standards: string;
   artifactPath: string;
@@ -113,7 +124,7 @@ export function renderRolePrompt(input: Omit<RoleRunInput, "backend" | "cwd">): 
     "",
     "Instructions:",
     `Act as the DevCrew ${input.role} role and produce a complete, well-structured Markdown document for the ${input.phase} phase.`,
-    "Keep scope aligned with the approved gates and inherited host permissions.",
+    "Keep scope aligned with the approved gates and the selected DevCrew execution policy.",
     permissionInstruction,
     "",
     "Required Sections:",
@@ -170,13 +181,14 @@ interface CodexClient {
 
 type CodexConstructor = new () => CodexClient;
 
-export type ClaudePermissionMode = "default" | "acceptEdits" | "bypassPermissions" | "plan";
+export type ClaudePermissionMode = "default" | "acceptEdits" | "bypassPermissions" | "dontAsk" | "plan";
 
 export interface ClaudeQueryOptions {
   cwd?: string;
   permissionMode?: ClaudePermissionMode;
   allowedTools?: string[];
   disallowedTools?: string[];
+  allowDangerouslySkipPermissions?: boolean;
 }
 
 export type ClaudeResultSubtype = "success" | "error_max_turns" | "error_during_execution";
@@ -294,28 +306,51 @@ export function extractClaudeResult(message: ClaudeResultMessage | undefined): s
   return text;
 }
 
-function roleCanApply(input: Pick<RoleRunInput, "executionMode" | "phase">): boolean {
+function isApplyPhase(input: Pick<RoleRunInput, "executionMode" | "phase">): boolean {
   return input.executionMode === "apply" && (input.phase === "execution" || input.phase === "testing");
 }
 
-function codexSandboxForRole(input: RoleRunInput): CodexSandboxMode {
-  return roleCanApply(input) ? "workspace-write" : "read-only";
+function effectiveExecutionPolicy(input: Pick<RoleRunInput, "executionPolicy">): ExecutionPolicy {
+  return input.executionPolicy ?? "interactive-host";
+}
+
+function roleCanApply(input: Pick<RoleRunInput, "executionMode" | "executionPolicy" | "phase">): boolean {
+  return isApplyPhase(input) && effectiveExecutionPolicy(input) !== "interactive-host";
+}
+
+function codexOptionsForRole(input: RoleRunInput): CodexThreadOptions {
+  if (!roleCanApply(input)) {
+    return buildCodexThreadOptions(input.cwd);
+  }
+  const executionPolicy = effectiveExecutionPolicy(input);
+  return {
+    ...buildCodexThreadOptions(input.cwd, "workspace-write"),
+    approvalPolicy: executionPolicy === "headless-unattended" ? "never" : "on-request",
+    networkAccessEnabled: false,
+  };
 }
 
 function claudeOptionsForRole(input: RoleRunInput): ClaudeQueryOptions {
   if (!roleCanApply(input)) {
     return buildClaudeOptions(input.cwd);
   }
+  if (effectiveExecutionPolicy(input) === "headless-unattended") {
+    return {
+      cwd: input.cwd,
+      permissionMode: "bypassPermissions",
+      allowDangerouslySkipPermissions: true,
+    };
+  }
   const allowedTools =
-    input.role === "implementer" ? ["Read", "Grep", "Glob", "Edit", "Write", "Bash"] : ["Read", "Grep", "Glob", "Bash"];
-  return buildClaudeOptions(input.cwd, "acceptEdits", allowedTools);
+    input.role === "implementer" ? ["Read", "Grep", "Glob", "Edit", "Write"] : ["Read", "Grep", "Glob"];
+  return buildClaudeOptions(input.cwd, "dontAsk", allowedTools);
 }
 
 async function runWithCodex(input: RoleRunInput, prompt: string, loadModule: ModuleLoader): Promise<string> {
   const mod = await loadModule(HOST_SDK_PACKAGES.codex);
   const CodexClass = mod.Codex as CodexConstructor;
   const codex = new CodexClass();
-  const thread = codex.startThread(buildCodexThreadOptions(input.cwd, codexSandboxForRole(input)));
+  const thread = codex.startThread(codexOptionsForRole(input));
   const turn = await thread.run(prompt);
   return extractCodexText(turn);
 }
@@ -356,6 +391,9 @@ export interface RunRoleDeps {
 }
 
 export async function runRole(input: RoleRunInput, deps: RunRoleDeps = {}): Promise<RoleResult> {
+  if (isApplyPhase(input) && effectiveExecutionPolicy(input) === "interactive-host") {
+    throw new Error("DevCrew interactive-host execution must be performed by the host, not a nested SDK");
+  }
   const loadModule = deps.loadModule ?? importOptional;
   const title = titleForPhase(input.phase);
   const prompt = renderRolePrompt(input);

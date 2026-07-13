@@ -144,6 +144,7 @@ test("runRole gives implementer a writable Codex sandbox only during execution",
     role: "implementer",
     phase: "execution",
     executionMode: "apply",
+    executionPolicy: "headless-restricted",
   }, { loadModule });
 
   assert.equal(planned.usedFallback, false);
@@ -151,6 +152,8 @@ test("runRole gives implementer a writable Codex sandbox only during execution",
   assert.equal(receivedOptions[0]?.sandboxMode, "read-only");
   assert.match(receivedPrompts[0] ?? "", /Do not modify repository files/);
   assert.equal(receivedOptions[1]?.sandboxMode, "workspace-write");
+  assert.equal(receivedOptions[1]?.approvalPolicy, "on-request");
+  assert.equal(receivedOptions[1]?.networkAccessEnabled, false);
   assert.match(receivedPrompts[1] ?? "", /You may modify repository files/);
 });
 
@@ -171,7 +174,7 @@ test("buildClaudeOptions pins the read-only planning contract", () => {
   });
 });
 
-test("runRole gives tester Bash access through Claude only in apply mode", async () => {
+test("runRole gives a restricted Claude tester no shell auto-approval", async () => {
   let receivedOptions: ClaudeQueryOptions | undefined;
   let receivedPrompt = "";
 
@@ -192,12 +195,36 @@ test("runRole gives tester Bash access through Claude only in apply mode", async
     role: "tester",
     phase: "testing",
     executionMode: "apply",
+    executionPolicy: "headless-restricted",
   }, { loadModule });
 
   assert.equal(result.usedFallback, false);
-  assert.equal(receivedOptions?.permissionMode, "acceptEdits");
-  assert.deepEqual(receivedOptions?.allowedTools, ["Read", "Grep", "Glob", "Bash"]);
-  assert.match(receivedPrompt, /run validation commands/i);
+  assert.equal(receivedOptions?.permissionMode, "dontAsk");
+  assert.deepEqual(receivedOptions?.allowedTools, ["Read", "Grep", "Glob"]);
+  assert.equal(receivedOptions?.allowedTools?.includes("Bash"), false);
+  assert.match(receivedPrompt, /report exact evidence/i);
+});
+
+test("runRole rejects interactive-host execution before loading an SDK", async () => {
+  let loaded = false;
+  const loadModule: ModuleLoader = async () => {
+    loaded = true;
+    return {};
+  };
+
+  await assert.rejects(
+    () =>
+      runRole({
+        ...baseInput,
+        backend: "claude",
+        role: "implementer",
+        phase: "execution",
+        executionMode: "apply",
+        executionPolicy: "interactive-host",
+      }, { loadModule }),
+    /interactive-host execution must be performed by the host/i,
+  );
+  assert.equal(loaded, false);
 });
 
 test("extractClaudeResult returns the result on a successful turn", () => {

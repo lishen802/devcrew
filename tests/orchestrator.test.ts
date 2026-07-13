@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { approveWorkflow, rejectWorkflow, startWorkflow } from "../packages/core/src/index.js";
+import { approveWorkflow, getWorkflowStatus, rejectWorkflow, startWorkflow } from "../packages/core/src/index.js";
 import {
   answerOrchestratedWorkflow,
   approveOrchestratedWorkflow,
@@ -253,7 +253,7 @@ test("apply mode plans read-only before executing in a worktree", async () => {
   await continueOrchestratedWorkflow({ cwd, runId: started.runId }, runner);
 
   assert.equal(calls.at(-1)?.phase, "implementation");
-  assert.equal(calls.at(-1)?.executionMode, "plan");
+  assert.equal(calls.at(-1)?.executionMode, "apply");
   assert.equal(calls.at(-1)?.cwd, cwd);
   assert.equal(await pathExists(join(cwd, "generated.ts")), false);
 
@@ -288,6 +288,20 @@ test("testing approval promotes the reviewed patch exactly once", async () => {
   assert.equal(tested.status, "awaiting_approval");
   assert.match(tested.implementationDiff, /tested\.ts/);
   assert.equal(await pathExists(join(cwd, "generated.ts")), false);
+
+  await assert.rejects(
+    () =>
+      approveOrchestratedWorkflow({
+        cwd,
+        runId: tested.runId,
+        gate: "testing",
+        note: {} as never,
+      }),
+    /note must be a non-empty string/i,
+  );
+  assert.equal(await pathExists(join(cwd, "generated.ts")), false);
+  assert.equal(await pathExists(workspacePath), true);
+  assert.equal((await getWorkflowStatus({ cwd, runId: tested.runId })).gates.testing, "pending");
 
   const approved = await approveOrchestratedWorkflow({
     cwd,
@@ -350,6 +364,25 @@ test("rejected testing returns to execution without touching the requester repos
   assert.equal(revised.gates.testing, "not_started");
   assert.equal(await pathExists(join(cwd, "generated.ts")), false);
   assert.equal(await pathExists(workspacePath), true);
+
+  const revisionRunner = async (input: RoleRunInput): Promise<RoleResult> => {
+    if (input.phase === "execution") {
+      await writeFile(join(input.cwd, "generated.ts"), "export const generated = 'revised';\n");
+    }
+    return validRoleResult(input);
+  };
+  await continueOrchestratedWorkflow({ cwd, runId: tested.runId }, revisionRunner);
+  const retested = await continueOrchestratedWorkflow({ cwd, runId: tested.runId }, revisionRunner);
+  assert.equal(retested.phase, "testing");
+  assert.equal(retested.status, "awaiting_approval");
+  assert.match(retested.implementationDiff, /generated = 'revised'/);
+
+  await approveOrchestratedWorkflow({ cwd, runId: tested.runId, gate: "testing" });
+  assert.equal(
+    await readFile(join(cwd, "generated.ts"), "utf8"),
+    "export const generated = 'revised';\n",
+  );
+  assert.equal(await pathExists(workspacePath), false);
 });
 
 test("apply mode tester runs configured verification and coverage commands", async () => {

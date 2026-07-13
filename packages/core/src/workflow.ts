@@ -163,6 +163,10 @@ export async function continueWorkflow(input: RunRef): Promise<RunState> {
     return saveState(state);
   }
 
+  if (state.phase === "execution") {
+    throw new Error("DevCrew execution phase requires orchestrated continuation");
+  }
+
   const gate = gateForPhase(state.phase);
   if (!gate) {
     state.status = "complete";
@@ -174,13 +178,23 @@ export async function continueWorkflow(input: RunRef): Promise<RunState> {
   return saveState(state);
 }
 
-export async function approveWorkflow(input: ApproveWorkflowInput): Promise<RunState> {
+export async function validateWorkflowApproval(input: ApproveWorkflowInput): Promise<RunState> {
   const state = await getWorkflowStatus(input);
   const gate = parseGate(input.gate);
   if (state.gates[gate] === "approved") {
     return state;
   }
   assertPendingCurrentGate(state, gate);
+  parseOptionalNote(input.note);
+  return state;
+}
+
+export async function approveWorkflow(input: ApproveWorkflowInput): Promise<RunState> {
+  const state = await validateWorkflowApproval(input);
+  const gate = parseGate(input.gate);
+  if (state.gates[gate] === "approved") {
+    return state;
+  }
   state.gates[gate] = "approved";
   state.approvals.push({
     gate,

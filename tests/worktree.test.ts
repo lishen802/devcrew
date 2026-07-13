@@ -9,6 +9,7 @@ import assert from "node:assert/strict";
 import { startWorkflow, type RunState } from "../packages/core/src/index.js";
 import {
   captureExecutionChanges,
+  cleanupExecutionWorkspace,
   ensureExecutionWorkspace,
   promoteExecutionChanges,
 } from "../packages/orchestrator/src/worktree.js";
@@ -72,6 +73,15 @@ test("captureExecutionChanges includes commits, staged, unstaged, renamed, delet
   assert.match(captured.patch, /renamed\.txt/);
   assert.match(captured.patch, /delete-me\.txt/);
   assert.match(captured.patch, /GIT binary patch|binary\.bin/);
+  assert.deepEqual(captured.changedFiles.sort(), [
+    "binary.bin",
+    "committed.txt",
+    "delete-me.txt",
+    "rename-me.txt",
+    "renamed.txt",
+    "staged.txt",
+    "unstaged.txt",
+  ]);
   assert.equal((await git(workspace.path, ["rev-parse", "HEAD"])).trim(), workspace.baseCommit);
 });
 
@@ -84,8 +94,11 @@ test("promoteExecutionChanges applies exactly the reviewed patch", async () => {
   state.implementationDiff = captured.patch;
 
   await promoteExecutionChanges(state);
+  await promoteExecutionChanges(state);
 
   assert.equal(await readFile(join(state.cwd, "feature.ts"), "utf8"), "export const feature = true;\n");
+  assert.equal(await pathExists(workspace.path), true);
+  await cleanupExecutionWorkspace(state);
   assert.equal(await pathExists(workspace.path), false);
 });
 
@@ -98,6 +111,33 @@ test("promotion refuses a changed requester HEAD or dirty requester worktree", a
 
   await writeFile(join(state.cwd, "README.md"), "dirty\n");
   await assert.rejects(() => promoteExecutionChanges(state), /clean working tree/);
+  assert.equal(await pathExists(workspace.path), true);
+});
+
+test("promotion refuses a requester with index-only changes", async () => {
+  const state = await applyStateFixture();
+  const workspace = await ensureExecutionWorkspace(state);
+  await writeFile(join(workspace.path, "feature.ts"), "export const feature = true;\n");
+  state.executionWorkspace = workspace;
+  state.implementationDiff = (await captureExecutionChanges(workspace)).patch;
+
+  await git(state.cwd, ["rm", "--cached", "README.md"]);
+
+  await assert.rejects(() => promoteExecutionChanges(state), /clean working tree/);
+  assert.equal(await pathExists(join(state.cwd, "feature.ts")), false);
+  assert.equal(await pathExists(workspace.path), true);
+});
+
+test("promotion rolls back when the applied patch differs from the reviewed diff", async () => {
+  const state = await applyStateFixture();
+  const workspace = await ensureExecutionWorkspace(state);
+  await writeFile(join(workspace.path, "feature.ts"), "export const feature = true;\n");
+  state.executionWorkspace = workspace;
+  state.implementationDiff = `# review metadata\n${(await captureExecutionChanges(workspace)).patch}`;
+
+  await assert.rejects(() => promoteExecutionChanges(state), /differs from the reviewed implementation diff/);
+  assert.equal(await pathExists(join(state.cwd, "feature.ts")), false);
+  assert.equal(await readFile(join(state.cwd, "README.md"), "utf8"), "# Fixture\n");
   assert.equal(await pathExists(workspace.path), true);
 });
 

@@ -132,6 +132,32 @@ test("apply implementation approval advances to execution while plan advances to
   assert.equal(approvedPlan.phase, "testing");
 });
 
+test("core continuation cannot bypass orchestrated apply execution", async () => {
+  const cwd = await tempProject();
+  const state = await startWorkflow({
+    cwd,
+    host: "codex",
+    mode: "feature",
+    request: "Apply a change",
+    backend: "codex",
+    executionMode: "apply",
+  });
+  state.phase = "execution";
+  state.status = "ready";
+  state.gates.requirements = "approved";
+  state.gates.architecture = "approved";
+  state.gates.implementation = "approved";
+  await saveState(state);
+
+  await assert.rejects(
+    () => continueWorkflow({ cwd, runId: state.runId }),
+    /execution phase requires orchestrated continuation/i,
+  );
+  const persisted = await loadState(cwd, state.runId);
+  assert.equal(persisted.phase, "execution");
+  assert.equal(persisted.status, "ready");
+});
+
 test("completed workflows cannot be reopened and duplicate approval is idempotent", async () => {
   const cwd = await tempProject();
   const state = await startWorkflow({

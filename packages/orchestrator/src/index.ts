@@ -20,6 +20,7 @@ import {
   renderArtifact,
   saveState,
   startWorkflow,
+  validateWorkflowApproval,
   type AnswerWorkflowInput,
   type ApproveWorkflowInput,
   type ArtifactName,
@@ -33,8 +34,10 @@ import {
 } from "../../core/src/index.js";
 import {
   captureExecutionChanges,
+  cleanupExecutionWorkspace,
   ensureExecutionWorkspace,
   promoteExecutionChanges,
+  rollbackPromotedExecutionChanges,
 } from "./worktree.js";
 
 // Hard cap so a hung apply/verify command cannot block the serialized MCP loop.
@@ -292,8 +295,6 @@ async function runCurrentPhaseRole(state: RunState, runner: RoleRunner = runRole
   if (!roleCwd) {
     throw new Error("DevCrew apply testing requires an execution workspace");
   }
-  const roleExecutionMode = state.phase === "implementation" ? "plan" : state.executionMode;
-
   state.roles.push(conductorDecision(state, role, gate));
 
   const result = await runner({
@@ -302,7 +303,7 @@ async function runCurrentPhaseRole(state: RunState, runner: RoleRunner = runRole
     phase: state.phase,
     request: state.request,
     mode: state.mode,
-    executionMode: roleExecutionMode,
+    executionMode: state.executionMode,
     cwd: roleCwd,
     standards: state.standards.combined,
     artifactPath: path,
@@ -345,23 +346,54 @@ export async function continueOrchestratedWorkflow(input: RunRef, runner: RoleRu
 }
 
 export async function approveOrchestratedWorkflow(input: ApproveWorkflowInput): Promise<RunState> {
-  const before = await getWorkflowStatus(input);
+  const before = await validateWorkflowApproval(input);
   const promotingTesting =
     input.gate === "testing" &&
     before.executionMode === "apply" &&
     before.phase === "testing" &&
     before.status === "awaiting_approval" &&
     before.gates.testing === "pending";
-  if (promotingTesting) {
-    await promoteExecutionChanges(before);
+  const cleaningCompletedPromotion =
+    input.gate === "testing" &&
+    before.executionMode === "apply" &&
+    before.gates.testing === "approved" &&
+    before.executionWorkspace !== undefined;
+
+  async function cleanupAfterApproval(state: RunState): Promise<RunState> {
+    try {
+      await cleanupExecutionWorkspace(state);
+    } catch {
+      return state;
+    }
+    state.executionWorkspace = undefined;
+    try {
+      return await saveState(state);
+    } catch {
+      return state;
+    }
   }
 
-  const state = await approveWorkflow(input);
-  if (promotingTesting && state.executionWorkspace) {
-    state.executionWorkspace = undefined;
-    return saveState(state);
+  if (cleaningCompletedPromotion) {
+    return cleanupAfterApproval(before);
   }
-  return state;
+  if (promotingTesting) {
+    await promoteExecutionChanges(before);
+    let approved: RunState;
+    try {
+      approved = await approveWorkflow(input);
+    } catch (error) {
+      try {
+        await rollbackPromotedExecutionChanges(before);
+      } catch (rollbackError) {
+        const detail = rollbackError instanceof Error ? rollbackError.message : String(rollbackError);
+        throw new Error(`DevCrew approval failed and promoted patch rollback failed: ${detail}`, { cause: error });
+      }
+      throw error;
+    }
+    return cleanupAfterApproval(approved);
+  }
+
+  return approveWorkflow(input);
 }
 
 export async function rejectOrchestratedWorkflow(input: RejectWorkflowInput): Promise<RunState> {

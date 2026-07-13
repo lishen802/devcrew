@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { access, mkdir, writeFile } from "node:fs/promises";
+import { access, mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import {
@@ -22,9 +22,14 @@ const REPOSITORY_PATHS = [
   ":(exclude)docs/devcrew/**",
 ];
 
-async function runGit(args: string[], cwd: string, stdin?: string): Promise<string> {
+async function runGit(
+  args: string[],
+  cwd: string,
+  stdin?: string,
+  env?: NodeJS.ProcessEnv,
+): Promise<string> {
   return new Promise((resolveResult, rejectResult) => {
-    const child = spawn("git", args, { cwd, stdio: ["pipe", "pipe", "pipe"] });
+    const child = spawn("git", args, { cwd, env, stdio: ["pipe", "pipe", "pipe"] });
     let stdout = "";
     let stderr = "";
     let settled = false;
@@ -109,31 +114,64 @@ function parseChangedFiles(output: string): string[] {
   return [...new Set(paths)];
 }
 
-async function markUntrackedIntentToAdd(cwd: string): Promise<void> {
+async function markUntrackedIntentToAdd(cwd: string, env?: NodeJS.ProcessEnv): Promise<void> {
   const untracked = nulPaths(
-    await runGit(["ls-files", "--others", "--exclude-standard", "-z", "--", ...REPOSITORY_PATHS], cwd),
+    await runGit(
+      ["ls-files", "--others", "--exclude-standard", "-z", "--", ...REPOSITORY_PATHS],
+      cwd,
+      undefined,
+      env,
+    ),
   );
   if (untracked.length > 0) {
-    await runGit(["add", "-N", "--", ...untracked], cwd);
+    await runGit(["add", "-N", "--", ...untracked], cwd, undefined, env);
   }
 }
 
-async function capturePatch(workspace: ExecutionWorkspace): Promise<CapturedExecutionChanges> {
-  await markUntrackedIntentToAdd(workspace.path);
+interface CapturePatchOptions {
+  allowEmpty?: boolean;
+  env?: NodeJS.ProcessEnv;
+}
+
+async function capturePatch(
+  workspace: ExecutionWorkspace,
+  options: CapturePatchOptions = {},
+): Promise<CapturedExecutionChanges> {
+  await markUntrackedIntentToAdd(workspace.path, options.env);
   const changedFiles = parseChangedFiles(
     await runGit(
       ["diff", "--name-status", "-z", workspace.baseCommit, "--", ...REPOSITORY_PATHS],
       workspace.path,
+      undefined,
+      options.env,
     ),
   );
   const patch = await runGit(
     ["diff", "--binary", "--no-ext-diff", workspace.baseCommit, "--", ...REPOSITORY_PATHS],
     workspace.path,
+    undefined,
+    options.env,
   );
-  if (!patch.trim()) {
+  if (!options.allowEmpty && !patch.trim()) {
     throw new Error("DevCrew apply implementer produced no repository changes");
   }
   return { changedFiles, patch };
+}
+
+async function captureRequesterChanges(state: RunState, workspace: ExecutionWorkspace): Promise<CapturedExecutionChanges> {
+  const indexPath = join(runDir(state.cwd, state.runId), "promotion.index");
+  await mkdir(dirname(indexPath), { recursive: true });
+  await rm(indexPath, { force: true });
+  const env = { ...process.env, GIT_INDEX_FILE: indexPath };
+  try {
+    await runGit(["read-tree", workspace.baseCommit], state.cwd, undefined, env);
+    return await capturePatch(
+      { path: state.cwd, baseCommit: workspace.baseCommit },
+      { allowEmpty: true, env },
+    );
+  } finally {
+    await rm(indexPath, { force: true });
+  }
 }
 
 export async function ensureExecutionWorkspace(state: RunState): Promise<ExecutionWorkspace> {
@@ -165,7 +203,6 @@ export async function promoteExecutionChanges(state: RunState): Promise<void> {
     throw new Error("DevCrew apply promotion requires reviewed execution changes");
   }
 
-  await assertCleanRequester(state.cwd);
   const requesterHead = (await runGit(["rev-parse", "HEAD"], state.cwd)).trim();
   if (requesterHead !== workspace.baseCommit) {
     throw new Error("DevCrew apply promotion refused because requester HEAD changed");
@@ -174,11 +211,20 @@ export async function promoteExecutionChanges(state: RunState): Promise<void> {
   const patchPath = join(runDir(state.cwd, state.runId), "implementation.patch");
   await mkdir(dirname(patchPath), { recursive: true });
   await writeFile(patchPath, state.implementationDiff);
+
+  const current = await captureRequesterChanges(state, workspace);
+  if (current.patch === state.implementationDiff) {
+    return;
+  }
+  if (current.patch.trim()) {
+    throw new Error("DevCrew apply promotion requires a clean working tree");
+  }
+  await assertCleanRequester(state.cwd);
+
   await runGit(["apply", "--check", "--binary", patchPath], state.cwd);
   await runGit(["apply", "--binary", patchPath], state.cwd);
 
-  const promoted = await capturePatch({ path: state.cwd, baseCommit: workspace.baseCommit });
-  await runGit(["reset", "--mixed", workspace.baseCommit], state.cwd);
+  const promoted = await captureRequesterChanges(state, workspace);
   if (promoted.patch !== state.implementationDiff) {
     try {
       await runGit(["apply", "--reverse", "--binary", patchPath], state.cwd);
@@ -188,8 +234,30 @@ export async function promoteExecutionChanges(state: RunState): Promise<void> {
     }
     throw new Error("DevCrew promoted patch differs from the reviewed implementation diff");
   }
+}
 
-  await runGit(["worktree", "remove", "--force", workspace.path], state.cwd);
+export async function rollbackPromotedExecutionChanges(state: RunState): Promise<void> {
+  const workspace = state.executionWorkspace;
+  if (!workspace || !state.implementationDiff.trim()) {
+    throw new Error("DevCrew apply rollback requires reviewed execution changes");
+  }
+  const patchPath = join(runDir(state.cwd, state.runId), "implementation.patch");
+  await runGit(["apply", "--reverse", "--check", "--binary", patchPath], state.cwd);
+  await runGit(["apply", "--reverse", "--binary", patchPath], state.cwd);
+  const remaining = await captureRequesterChanges(state, workspace);
+  if (remaining.patch.trim()) {
+    throw new Error("DevCrew apply rollback left requester repository changes");
+  }
+}
+
+export async function cleanupExecutionWorkspace(state: RunState): Promise<void> {
+  const workspace = state.executionWorkspace;
+  if (!workspace) {
+    return;
+  }
+  if (await pathExists(workspace.path)) {
+    await runGit(["worktree", "remove", "--force", workspace.path], state.cwd);
+  }
   await runGit(["worktree", "prune"], state.cwd);
 }
 

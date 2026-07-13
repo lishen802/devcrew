@@ -1,6 +1,7 @@
 node_modules/
 dist/
 .devcrew/
+.worktrees/
 docs/devcrew/
 .idea/
 coverage/

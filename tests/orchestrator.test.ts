@@ -51,6 +51,7 @@ function validRoleResult(input: RoleRunInput): RoleResult {
     summary: `${input.role} completed`,
     markdown: `# ${input.role}\n\nCompleted ${input.phase}.\n`,
     usedFallback: false,
+    reviewDecision: input.phase === "review" ? "approved" : undefined,
   };
 }
 
@@ -360,6 +361,55 @@ test("apply mode plans read-only before executing in a worktree", async () => {
   assert.equal(reviewed.status, "awaiting_approval");
   assert.equal(reviewed.gates["implementation-review"], "pending");
   assert.ok(reviewed.artifacts["architecture-review"]);
+});
+
+test("architecture review blocks testing when it requires changes", async () => {
+  const cwd = await tempProject();
+  await initGitRepo(cwd);
+  const runner = async (input: RoleRunInput): Promise<RoleResult> => {
+    if (input.phase === "execution") {
+      await writeFile(join(input.cwd, "generated.ts"), "export const generated = true;\n");
+    }
+    if (input.phase === "review") {
+      return {
+        ...validRoleResult(input),
+        summary: "The generated API does not match the approved contract.",
+        reviewDecision: "changes_required",
+      };
+    }
+    return validRoleResult(input);
+  };
+  const started = await startOrchestratedWorkflow({
+    cwd,
+    host: "codex",
+    mode: "feature",
+    request: "Add generated code",
+    backend: "codex",
+    executionMode: "apply",
+    executionPolicy: "headless-restricted",
+  }, runner);
+
+  await approveWorkflow({ cwd, runId: started.runId, gate: "requirements" });
+  await continueOrchestratedWorkflow({ cwd, runId: started.runId }, runner);
+  await approveWorkflow({ cwd, runId: started.runId, gate: "architecture" });
+  await continueOrchestratedWorkflow({ cwd, runId: started.runId }, runner);
+  await approveWorkflow({ cwd, runId: started.runId, gate: "implementation" });
+  await continueOrchestratedWorkflow({ cwd, runId: started.runId }, runner);
+
+  const reviewed = await continueOrchestratedWorkflow({ cwd, runId: started.runId }, runner);
+  assert.equal(reviewed.phase, "review");
+  assert.equal(reviewed.status, "awaiting_input");
+  assert.equal(reviewed.gates["implementation-review"], "rejected");
+  assert.equal(reviewed.architectureReview?.decision, "changes_required");
+  assert.match(reviewed.feedback.at(-1)?.message ?? "", /does not match the approved contract/);
+  assert.match(
+    await readFile(reviewed.artifacts["architecture-review"] ?? "", "utf8"),
+    /## Review Decision\n\nDecision: changes_required/,
+  );
+  await assert.rejects(
+    () => approveWorkflow({ cwd, runId: started.runId, gate: "implementation-review" }),
+    /not pending approval/,
+  );
 });
 
 test("interactive-host apply waits for native host execution and records its completion", async () => {

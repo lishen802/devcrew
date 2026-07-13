@@ -42,6 +42,12 @@ The implementation-plan approval advances the run to `execution`. With the defau
 
 Apply requires Git and a clean requester worktree both when execution starts and when the reviewed patch is promoted. The requester repository remains unchanged until testing approval. A failed verification enters `awaiting_input`, rather than a promotable testing gate; it can be revised with `devcrew_answer` or deliberately reopened only through `devcrew_waive_verification` with a non-empty risk reason. If testing is rejected, `devcrew_answer` records the response and returns the run to `execution/ready` with the isolated worktree intact.
 
+The execution review is also structured: the architect must return either
+`Decision: approved` or `Decision: changes_required` in its
+`architecture-review` artifact. A `changes_required` decision rejects the
+implementation-review gate and keeps the run at `awaiting_input`; it cannot
+enter testing until the feedback is addressed and a later review approves it.
+
 `devcrew_start` records the created run as the active run for the repository.
 Subsequent MCP calls can omit `runId`; DevCrew resolves it from
 `.devcrew/active-run.json`. Plugin MCP configs set `DEVCREW_HOST`, so `host`

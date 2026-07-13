@@ -310,6 +310,13 @@ function parseCompletionVerification(value: unknown): VerificationResult[] {
 }
 
 function appendExecutionSections(artifact: ArtifactName, markdown: string, state: RunState): string {
+  if (artifact === "architecture-review" && state.architectureReview) {
+    let content = markdown.trim();
+    if (!content.includes("## Review Decision")) {
+      content += `\n\n## Review Decision\n\nDecision: ${state.architectureReview.decision}\n\nSummary: ${state.architectureReview.summary}`;
+    }
+    return `${content}\n`;
+  }
   if (artifact === "test-report") {
     let content = markdown.trim();
     if (!content.includes("## Acceptance Evidence")) {
@@ -443,6 +450,17 @@ async function runCurrentPhaseRole(state: RunState, runner: RoleRunner = runRole
     await writeImplementationReview(state);
   }
 
+  if (state.phase === "review") {
+    if (!result.reviewDecision) {
+      throw new Error("DevCrew architecture review must return a structured review decision");
+    }
+    state.architectureReview = {
+      decision: result.reviewDecision,
+      summary: result.summary,
+      reviewedAt: now(),
+    };
+  }
+
   // When the backend cannot run a real SDK we keep a single deterministic
   // artifact source by rendering the rich phase template from the core layer.
   const baseMarkdown = result.usedFallback ? `${fallbackNotice(result)}${renderArtifact(artifact, state)}` : result.markdown;
@@ -454,6 +472,16 @@ async function runCurrentPhaseRole(state: RunState, runner: RoleRunner = runRole
     state.pendingQuestions = result.questions;
     state.gates.requirements = "not_started";
     state.status = "awaiting_input";
+    return saveState(state);
+  }
+  if (state.phase === "review" && state.architectureReview?.decision === "changes_required") {
+    state.gates["implementation-review"] = "rejected";
+    state.status = "awaiting_input";
+    state.feedback.push({
+      gate: "implementation-review",
+      message: state.architectureReview.summary,
+      createdAt: now(),
+    });
     return saveState(state);
   }
   if (!gate && configuredGate) {

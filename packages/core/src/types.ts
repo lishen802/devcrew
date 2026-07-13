@@ -28,6 +28,7 @@ export type WorkflowMode = (typeof WORKFLOW_MODES)[number];
 export type ExecutionMode = (typeof EXECUTION_MODES)[number];
 export type ExecutionPolicy = (typeof EXECUTION_POLICIES)[number];
 export type VerificationStatus = "not_run" | "passed" | "failed";
+export type ArchitectureReviewDecision = "approved" | "changes_required";
 export type Host = (typeof HOSTS)[number];
 export type BackendName = (typeof BACKENDS)[number];
 export type Phase = (typeof PHASES)[number];
@@ -94,6 +95,13 @@ export interface RoleResult {
   markdown: string;
   usedFallback: boolean;
   questions?: string[];
+  reviewDecision?: ArchitectureReviewDecision;
+}
+
+export interface ArchitectureReview {
+  decision: ArchitectureReviewDecision;
+  summary: string;
+  reviewedAt: string;
 }
 
 export interface WorkflowFeedback {
@@ -160,6 +168,7 @@ export interface RunState {
   gates: Record<GateName, GateStatus>;
   artifacts: Partial<Record<ArtifactName, string>>;
   roles: RoleResult[];
+  architectureReview?: ArchitectureReview;
   pendingQuestions: string[];
   answers: WorkflowAnswer[];
   approvals: WorkflowApproval[];

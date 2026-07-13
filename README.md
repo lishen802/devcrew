@@ -16,6 +16,7 @@ The first release is intentionally local-first. DevCrew stores workflow state an
 - Host-preferred backend selection: Codex runs default to Codex, Claude Code runs default to Claude.
 - Orchestrated role execution: `devcrew_start` runs the PM role, and `devcrew_continue` runs the next phase role before opening the gate.
 - Implementation review artifact: isolated execution records changed files, a binary-capable diff, lint evidence, and architecture compliance notes; testing refreshes the reviewed diff before promotion.
+- Structured architecture review: execution must receive an architect decision of `approved` or `changes_required`; required changes block testing.
 - Repository artifacts in `.devcrew/runs/<run-id>/state.json` and `docs/devcrew/<run-id>/`.
 - Standards discovery from `.devcrew/standards.md`, `AGENTS.md`, `CLAUDE.md`, README, and common project manifests.
 - MCP tools: `devcrew_start`, `devcrew_status`, `devcrew_answer`, `devcrew_approve`, `devcrew_reject`, `devcrew_continue`, `devcrew_complete_execution`, `devcrew_waive_verification`, and `devcrew_artifact`.

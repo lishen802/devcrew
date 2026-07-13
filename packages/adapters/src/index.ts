@@ -95,6 +95,12 @@ export function extractOpenQuestions(markdown: string): string[] {
   return questions;
 }
 
+export function extractArchitectureReviewDecision(markdown: string): "approved" | "changes_required" | undefined {
+  const section = /^##\s+Review Decision\s*$(.*?)(?=^##\s|(?![\s\S]))/ims.exec(markdown)?.[1] ?? "";
+  const match = /^Decision:\s*(approved|changes_required)\s*$/im.exec(section);
+  return match?.[1] as "approved" | "changes_required" | undefined;
+}
+
 export function renderRolePrompt(input: Omit<RoleRunInput, "backend" | "cwd">): string {
   const executionMode = input.executionMode ?? "plan";
   const answers = input.answers ?? [];
@@ -145,6 +151,15 @@ export function renderRolePrompt(input: Omit<RoleRunInput, "backend" | "cwd">): 
     "Required Sections:",
     ...roleGuidance(input.role),
   );
+
+  if (input.phase === "review") {
+    lines.push(
+      "",
+      "Architecture Review Decision:",
+      "Add an exact H2 `## Review Decision` section containing exactly `Decision: approved` or `Decision: changes_required`.",
+      "Use `changes_required` for any mismatch with the approved architecture; summarize the blocking mismatch in that section.",
+    );
+  }
 
   return lines.join("\n");
 }
@@ -429,6 +444,10 @@ export async function runRole(input: RoleRunInput, deps: RunRoleDeps = {}): Prom
         ? await runWithCodex(input, prompt, loadModule)
         : await runWithClaude(input, prompt, loadModule);
     assertRoleSections(input.role, markdown);
+    const reviewDecision = input.phase === "review" ? extractArchitectureReviewDecision(markdown) : undefined;
+    if (input.phase === "review" && !reviewDecision) {
+      throw new RoleOutputValidationError(input.role, ["Review Decision"]);
+    }
     return {
       role: input.role,
       backend: input.backend,
@@ -436,6 +455,7 @@ export async function runRole(input: RoleRunInput, deps: RunRoleDeps = {}): Prom
       markdown,
       usedFallback: false,
       questions: input.role === "pm" ? extractOpenQuestions(markdown) : undefined,
+      reviewDecision,
     };
   } catch (error) {
     const reason = errorMessage(error);

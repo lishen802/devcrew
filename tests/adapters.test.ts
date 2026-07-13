@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   checkHostSdkResolution,
+  extractArchitectureReviewDecision,
   HOST_SDK_PACKAGES,
   missingRoleSections,
   renderRolePrompt,
@@ -89,6 +90,24 @@ test("renderRolePrompt includes prior artifacts for downstream roles", () => {
   assert.match(prompt, /Only OIDC is in scope/);
   assert.match(prompt, /architecture/);
   assert.match(prompt, /existing auth module/);
+});
+
+test("architecture review prompts and parses a structured decision", () => {
+  const prompt = renderRolePrompt({
+    role: "architect",
+    phase: "review",
+    request: "Review the executed patch",
+    mode: "feature",
+    standards: "Use TypeScript strict mode.",
+    artifactPath: "docs/devcrew/dc-demo/architecture-review.md",
+  });
+
+  assert.match(prompt, /## Review Decision/);
+  assert.equal(
+    extractArchitectureReviewDecision("# Review\n\n## Review Decision\n\nDecision: changes_required\n"),
+    "changes_required",
+  );
+  assert.equal(extractArchitectureReviewDecision("## Review Decision\n\nDecision: uncertain\n"), undefined);
 });
 
 test("runRole falls back to deterministic local output when host SDKs are unavailable", async () => {

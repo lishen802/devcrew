@@ -178,6 +178,7 @@ test("MCP testing approval promotes an isolated patch once", async () => {
       summary: `${input.role} completed`,
       markdown: `# ${input.role}\n\nCompleted ${input.phase}.\n`,
       usedFallback: false,
+      reviewDecision: input.phase === "review" ? "approved" : undefined,
     };
   };
   const started = await startOrchestratedWorkflow({

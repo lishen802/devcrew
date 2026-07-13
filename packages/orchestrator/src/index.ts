@@ -15,6 +15,7 @@ import {
   discoverVerifyCommands,
   gateForPhase,
   getWorkflowStatus,
+  nextPhaseAfterGate,
   readConfig,
   rejectWorkflow,
   renderArtifact,
@@ -385,9 +386,10 @@ async function runCurrentPhaseRole(state: RunState, runner: RoleRunner = runRole
     return saveState(state);
   }
 
-  const gate = gateForPhase(state.phase);
+  const configuredGate = gateForPhase(state.phase);
+  const gate = gateForPhase(state.phase, state.enabledGates);
   const role = roleForPhase(state.phase);
-  if (!gate || !role) {
+  if (!role) {
     const artifact = artifactForPhase(state.phase);
     const markdown = renderArtifact(artifact, state);
     state.artifacts[artifact] = await writeMarkdownArtifact(state, artifact, markdown);
@@ -403,7 +405,7 @@ async function runCurrentPhaseRole(state: RunState, runner: RoleRunner = runRole
   if (!roleCwd) {
     throw new Error("DevCrew apply testing requires an execution workspace");
   }
-  state.roles.push(conductorDecision(state, role, gate));
+  state.roles.push(conductorDecision(state, role, gate ?? `${state.phase} automatic transition`));
 
   if (applyingTesting && state.executionPolicy === "interactive-host") {
     state.executionInstruction = {
@@ -454,9 +456,17 @@ async function runCurrentPhaseRole(state: RunState, runner: RoleRunner = runRole
     state.status = "awaiting_input";
     return saveState(state);
   }
+  if (!gate && configuredGate) {
+    state.phase = nextPhaseAfterGate(state, configuredGate);
+    state.status = "ready";
+    return saveState(state);
+  }
   if (applyingTesting) {
     setTestingGateFromVerification(state);
   } else {
+    if (!gate) {
+      throw new Error(`DevCrew has no configured gate for ${state.phase}`);
+    }
     state.gates[gate] = "pending";
     state.status = "awaiting_approval";
   }
@@ -615,9 +625,8 @@ export async function answerOrchestratedWorkflow(input: AnswerWorkflowInput, run
     return saveState(state);
   }
 
-  const gate = gateForPhase(state.phase);
   const role = roleForPhase(state.phase);
-  if (!gate || !role) {
+  if (!role) {
     return state;
   }
 

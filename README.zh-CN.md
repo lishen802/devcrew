@@ -133,6 +133,9 @@ DevCrew 会自动从常见项目清单中发现验证命令。当前规则会优
 }
 ```
 
+`workflow.gates` 只控制是否需要人工审批 `requirements`、`architecture` 和
+`implementation` 产物。省略其中任意项仍会执行相应角色并写入产物，只是不再停下来等待审批，而是自动进入下一阶段。`implementation-review` 与 `testing` 是强制安全门禁：即使配置中省略，也始终启用。
+
 ## 开发命令
 
 ```bash
@@ -148,7 +151,7 @@ npm pack --dry-run
 
 公开 npm 发布由 `npm publish` GitHub Actions 工作流处理。发布 GitHub Release 或手动触发 workflow 时，它会先运行验证，再执行 `npm pack --dry-run` 检查包内容，最后在配置 `NPM_TOKEN` 后使用 npm provenance 发布公开包。
 
-发布 `@shenlee/devcrew@0.1.2` 后，再运行真实 marketplace smoke test。由于插件锁定了 npm 版本，这是发布后的检查：
+发布插件锁定的 npm 版本后，再运行真实 marketplace smoke test。由于插件锁定了 npm 版本，这是发布后的检查：
 
 ```bash
 npm run smoke:codex-plugin

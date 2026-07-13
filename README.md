@@ -119,6 +119,12 @@ You can override discovery with explicit commands in `.devcrew/config.json`:
 }
 ```
 
+`workflow.gates` controls only whether the requester must manually approve the
+`requirements`, `architecture`, and `implementation` artifacts. Omitting one
+of those names still runs its role and writes its artifact, then advances to the
+next phase automatically. `implementation-review` and `testing` are mandatory
+safety gates and are always enabled, even when omitted from the configuration.
+
 ## Development
 
 ```bash
@@ -134,7 +140,7 @@ For published installs, the host SDK packages are pinned optional dependencies s
 
 Public npm publishing is handled by the `npm publish` GitHub Actions workflow. It runs validation, checks the package with `npm pack --dry-run`, and publishes with npm provenance when a GitHub Release is published or the workflow is manually dispatched with `NPM_TOKEN` configured.
 
-After publishing `@shenlee/devcrew@0.1.2`, run the real marketplace smoke test. This is a post-publication check because the plugin is version-locked to the npm package:
+After publishing the version locked by the plugin, run the real marketplace smoke test. This is a post-publication check because the plugin is version-locked to the npm package:
 
 ```bash
 npm run smoke:codex-plugin

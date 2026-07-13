@@ -33,6 +33,7 @@ import type {
   StartWorkflowInput,
   WaiveVerificationInput,
 } from "./types.js";
+import { GATES } from "./types.js";
 
 function now(): string {
   return new Date().toISOString();
@@ -71,23 +72,31 @@ export function artifactForPhase(phase: RunState["phase"]): ArtifactName {
   return artifactByPhase[phase];
 }
 
-export function gateForPhase(phase: RunState["phase"]): GateName | undefined {
-  if (phase === "review") {
-    return "implementation-review";
-  }
-  if (
+export function gateForPhase(phase: RunState["phase"], enabledGates?: readonly GateName[]): GateName | undefined {
+  const gate = phase === "review"
+    ? "implementation-review"
+    : (
     phase === "requirements" ||
     phase === "architecture" ||
     phase === "implementation" ||
     phase === "testing"
-  ) {
-    return phase;
-  }
-  return undefined;
+      ? phase
+      : undefined
+    );
+  return gate && (!enabledGates || enabledGates.includes(gate)) ? gate : undefined;
+}
+
+function configuredGates(gates: readonly GateName[]): GateName[] {
+  const configured = new Set(
+    gates.filter((gate): gate is GateName => GATES.includes(gate)),
+  );
+  configured.add("implementation-review");
+  configured.add("testing");
+  return [...configured];
 }
 
 function assertPendingCurrentGate(state: RunState, gate: GateName): void {
-  const expected = gateForPhase(state.phase);
+  const expected = gateForPhase(state.phase, state.enabledGates);
   if (expected !== gate) {
     throw new Error(
       expected
@@ -120,6 +129,7 @@ export async function startWorkflow(input: StartWorkflowInput, options: Workflow
   const backend = input.backend ? parseBackend(input.backend) : config.defaultBackend === "host-preferred" ? host : config.defaultBackend;
   const executionMode = input.executionMode ? parseExecutionMode(input.executionMode) : config.executionMode;
   const executionPolicy = input.executionPolicy ? parseExecutionPolicy(input.executionPolicy) : "interactive-host";
+  const enabledGates = configuredGates(config.workflow.gates);
   if (executionMode === "apply" && backend === "local") {
     throw new Error("DevCrew apply mode requires a codex or claude backend; local is plan-only");
   }
@@ -132,15 +142,16 @@ export async function startWorkflow(input: StartWorkflowInput, options: Workflow
     mode,
     executionMode,
     executionPolicy,
+    enabledGates,
     artifactDirectory: config.workflow.artifactDirectory,
     backend,
     request,
     phase: "requirements",
-    status: "awaiting_approval",
+    status: enabledGates.includes("requirements") ? "awaiting_approval" : "ready",
     createdAt,
     updatedAt: createdAt,
     gates: {
-      requirements: "pending",
+      requirements: enabledGates.includes("requirements") ? "pending" : "not_started",
       architecture: "not_started",
       implementation: "not_started",
       "implementation-review": "not_started",
@@ -192,8 +203,14 @@ export async function continueWorkflow(input: RunRef): Promise<RunState> {
     throw new Error("DevCrew execution phase requires orchestrated continuation");
   }
 
-  const gate = gateForPhase(state.phase);
+  const configuredGate = gateForPhase(state.phase);
+  const gate = gateForPhase(state.phase, state.enabledGates);
   if (!gate) {
+    if (configuredGate) {
+      state.phase = nextPhaseAfterGate(state, configuredGate);
+      state.status = "ready";
+      return saveState(state);
+    }
     state.status = "complete";
     return saveState(state);
   }
@@ -252,7 +269,7 @@ export async function rejectWorkflow(input: RejectWorkflowInput): Promise<RunSta
 
 export async function answerWorkflow(input: AnswerWorkflowInput, options: WorkflowMutationOptions = {}): Promise<RunState> {
   const state = await getWorkflowStatus(input);
-  const gate = gateForPhase(state.phase);
+  const gate = gateForPhase(state.phase, state.enabledGates);
   if (state.status === "awaiting_input" && state.pendingQuestions.length > 0 && state.phase === "requirements") {
     state.answers.push({
       answer: parseAnswer(input.answer),

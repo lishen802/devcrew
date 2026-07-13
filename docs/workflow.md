@@ -59,6 +59,12 @@ Each main phase has a gate:
 
 The requester approves or rejects each gate. Rejection records feedback and returns the workflow to `awaiting_input`. In apply mode, rejecting testing never rolls changes back in the requester repository because no patch has been promoted yet.
 
+`workflow.gates` may omit `requirements`, `architecture`, or `implementation`
+to make that phase advance automatically after its role has produced an
+artifact. It never skips the role, artifact, execution, architecture review, or
+verification. `implementation-review` and `testing` are mandatory and DevCrew
+adds them back if a configuration omits them.
+
 ## State And Artifacts
 
 Runtime state is stored in:

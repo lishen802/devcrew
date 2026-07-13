@@ -147,6 +147,7 @@ export interface RunState {
   mode: WorkflowMode;
   executionMode: ExecutionMode;
   executionPolicy: ExecutionPolicy;
+  enabledGates: GateName[];
   artifactDirectory: string;
   executionWorkspace?: ExecutionWorkspace;
   executionInstruction?: ExecutionInstruction;

@@ -146,6 +146,48 @@ test("PM questions move the workflow to awaiting_input until the requester respo
   assert.deepEqual(receivedAnswers, ["CSV and JSON are required."]);
 });
 
+test("configured optional gates advance without bypassing the workflow", async () => {
+  const cwd = await tempProject();
+  await mkdir(join(cwd, ".devcrew"), { recursive: true });
+  await writeFile(
+    join(cwd, ".devcrew", "config.json"),
+    JSON.stringify({
+      version: 1,
+      defaultBackend: "local",
+      executionMode: "plan",
+      verifyCommands: [],
+      lintCommands: [],
+      coverageCommands: [],
+      workflow: {
+        gates: ["architecture", "implementation"],
+        artifactDirectory: "docs/devcrew",
+      },
+    }),
+  );
+
+  const started = await startOrchestratedWorkflow({
+    cwd,
+    host: "codex",
+    mode: "feature",
+    request: "Skip requirements approval only",
+    backend: "local",
+  });
+  assert.equal(started.phase, "architecture");
+  assert.equal(started.status, "ready");
+  assert.equal(started.gates.requirements, "not_started");
+  assert.equal(started.gates.testing, "not_started");
+  assert.equal(started.gates["implementation-review"], "not_started");
+  assert.deepEqual(
+    started.enabledGates,
+    ["architecture", "implementation", "implementation-review", "testing"],
+  );
+
+  const architecture = await continueOrchestratedWorkflow({ cwd, runId: started.runId });
+  assert.equal(architecture.phase, "architecture");
+  assert.equal(architecture.status, "awaiting_approval");
+  assert.equal(architecture.gates.architecture, "pending");
+});
+
 test("continueOrchestratedWorkflow runs the phase role and writes its markdown artifact", async () => {
   const cwd = await tempProject();
   const started = await startWorkflow({

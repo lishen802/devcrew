@@ -2,12 +2,14 @@ import {
   ARTIFACTS,
   BACKENDS,
   EXECUTION_MODES,
+  EXECUTION_POLICIES,
   GATES,
   HOSTS,
   WORKFLOW_MODES,
   type ArtifactName,
   type BackendName,
   type ExecutionMode,
+  type ExecutionPolicy,
   type GateName,
   type Host,
   type WorkflowMode,
@@ -33,6 +35,10 @@ export function parseWorkflowMode(value: unknown): WorkflowMode {
 
 export function parseExecutionMode(value: unknown): ExecutionMode {
   return oneOf(value, "executionMode", EXECUTION_MODES);
+}
+
+export function parseExecutionPolicy(value: unknown): ExecutionPolicy {
+  return oneOf(value, "executionPolicy", EXECUTION_POLICIES);
 }
 
 export function parseHost(value: unknown): Host {

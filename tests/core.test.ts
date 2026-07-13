@@ -69,6 +69,34 @@ test("startWorkflow persists explicit apply execution mode", async () => {
   assert.equal(loaded.executionMode, "apply");
 });
 
+test("apply workflows persist an explicit execution policy and reject unknown policies", async () => {
+  const cwd = await tempProject();
+  const state = await startWorkflow({
+    cwd,
+    host: "codex",
+    mode: "feature",
+    request: "Implement audit logging",
+    executionMode: "apply",
+    executionPolicy: "headless-restricted",
+  } as never);
+
+  assert.equal(state.executionPolicy, "headless-restricted");
+  assert.equal((await loadState(cwd, state.runId)).executionPolicy, "headless-restricted");
+  const invalidCwd = await tempProject();
+  await assert.rejects(
+    () =>
+      startWorkflow({
+        cwd: invalidCwd,
+        host: "codex",
+        mode: "feature",
+        request: "Reject unknown policy",
+        executionMode: "apply",
+        executionPolicy: "unsafe",
+      } as never),
+    /executionPolicy/,
+  );
+});
+
 test("apply mode rejects the deterministic local backend", async () => {
   const cwd = await tempProject();
   await assert.rejects(
@@ -448,6 +476,8 @@ test("loadState normalizes execution workspace and preserves legacy field migrat
   const statePath = join(runDir(cwd, state.runId), "state.json");
   const raw = JSON.parse(await readFile(statePath, "utf8"));
   delete raw.executionMode;
+  delete raw.executionPolicy;
+  delete raw.verificationStatus;
   raw.executionWorkspace = { path: "/tmp/devcrew-worktree", baseCommit: "abc123" };
   raw.changedFiles = "invalid";
   raw.implementationDiff = 42;
@@ -457,6 +487,8 @@ test("loadState normalizes execution workspace and preserves legacy field migrat
 
   const loaded = await loadState(cwd, state.runId);
   assert.equal(loaded.executionMode, "plan");
+  assert.equal(loaded.executionPolicy, "interactive-host");
+  assert.equal(loaded.verificationStatus, "not_run");
   assert.deepEqual(loaded.executionWorkspace, {
     path: "/tmp/devcrew-worktree",
     baseCommit: "abc123",

@@ -10,6 +10,7 @@ import {
   parseBackend,
   parseCwd,
   parseExecutionMode,
+  parseExecutionPolicy,
   parseFeedback,
   parseGate,
   parseHost,
@@ -105,6 +106,7 @@ export async function startWorkflow(input: StartWorkflowInput, options: Workflow
   const config = await ensureConfig(cwd);
   const backend = input.backend ? parseBackend(input.backend) : config.defaultBackend === "host-preferred" ? host : config.defaultBackend;
   const executionMode = input.executionMode ? parseExecutionMode(input.executionMode) : config.executionMode;
+  const executionPolicy = input.executionPolicy ? parseExecutionPolicy(input.executionPolicy) : "interactive-host";
   if (executionMode === "apply" && backend === "local") {
     throw new Error("DevCrew apply mode requires a codex or claude backend; local is plan-only");
   }
@@ -116,6 +118,7 @@ export async function startWorkflow(input: StartWorkflowInput, options: Workflow
     host,
     mode,
     executionMode,
+    executionPolicy,
     backend,
     request,
     phase: "requirements",
@@ -137,6 +140,7 @@ export async function startWorkflow(input: StartWorkflowInput, options: Workflow
     changedFiles: [],
     implementationDiff: "",
     verification: [],
+    verificationStatus: "not_run",
     lintResults: [],
   };
 

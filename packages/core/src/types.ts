@@ -1,5 +1,6 @@
 export const WORKFLOW_MODES = ["feature", "greenfield"] as const;
 export const EXECUTION_MODES = ["plan", "apply"] as const;
+export const EXECUTION_POLICIES = ["interactive-host", "headless-restricted", "headless-unattended"] as const;
 export const HOSTS = ["codex", "claude"] as const;
 export const BACKENDS = ["codex", "claude", "local"] as const;
 export const PHASES = [
@@ -23,6 +24,8 @@ export const ARTIFACTS = [
 
 export type WorkflowMode = (typeof WORKFLOW_MODES)[number];
 export type ExecutionMode = (typeof EXECUTION_MODES)[number];
+export type ExecutionPolicy = (typeof EXECUTION_POLICIES)[number];
+export type VerificationStatus = "not_run" | "passed" | "failed";
 export type Host = (typeof HOSTS)[number];
 export type BackendName = (typeof BACKENDS)[number];
 export type Phase = (typeof PHASES)[number];
@@ -128,6 +131,7 @@ export interface RunState {
   host: Host;
   mode: WorkflowMode;
   executionMode: ExecutionMode;
+  executionPolicy: ExecutionPolicy;
   executionWorkspace?: ExecutionWorkspace;
   backend: BackendName;
   request: string;
@@ -145,6 +149,7 @@ export interface RunState {
   changedFiles: string[];
   implementationDiff: string;
   verification: VerificationResult[];
+  verificationStatus: VerificationStatus;
   // VerificationResult is reused for lint output — same shape, different semantics.
   lintResults: VerificationResult[];
 }
@@ -156,6 +161,7 @@ export interface StartWorkflowInput {
   request: string;
   backend?: BackendName;
   executionMode?: ExecutionMode;
+  executionPolicy?: ExecutionPolicy;
 }
 
 export interface RunRef {

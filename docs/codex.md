@@ -38,7 +38,9 @@ It contains:
 - `.codex-plugin/plugin.json`
 - `skills/devcrew/SKILL.md`
 - `.mcp.json`
-- role agent TOML templates under `agents/`
+
+Role behavior is defined by the DevCrew MCP service and its shared runtime role
+schema. The plugin intentionally does not bundle inactive subagent templates.
 
 For local development, point a Codex marketplace entry at the generated plugin folder, or copy the plugin into your existing local marketplace workflow.
 

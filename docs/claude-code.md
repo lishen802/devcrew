@@ -17,8 +17,10 @@ It contains:
 
 - `.claude-plugin/plugin.json`
 - `skills/devcrew/SKILL.md`
-- `agents/*.md`
 - `.mcp.json`
+
+Role behavior is defined by the DevCrew MCP service and its shared runtime role
+schema. The plugin intentionally does not bundle inactive subagent templates.
 
 For local plugin testing:
 

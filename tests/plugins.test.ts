@@ -57,6 +57,7 @@ test("generateCodexPlugin writes a valid Codex plugin manifest and entry skill",
   assert.doesNotMatch(skill, /inherits host sandbox, approval, and tool permissions/i);
   await stat(join(plugin.path, "assets", "logo.png"));
   await stat(join(plugin.path, "assets", "composer-icon.png"));
+  await assert.rejects(() => stat(join(plugin.path, "agents")));
 
   const mcp = JSON.parse(await readFile(join(plugin.path, ".mcp.json"), "utf8"));
   assertVersionLockedMcpServer(mcp, "codex");
@@ -76,10 +77,6 @@ test("checked-in Codex plugin matches the shared generator", async () => {
     ".codex-plugin/plugin.json",
     ".mcp.json",
     "skills/devcrew/SKILL.md",
-    "agents/pm.toml",
-    "agents/architect.toml",
-    "agents/implementer.toml",
-    "agents/tester.toml",
     "assets/composer-icon.png",
     "assets/logo.png",
   ];
@@ -106,7 +103,7 @@ test("generateCodexMarketplace writes a repo marketplace entry for plugin instal
   assert.equal(content.plugins[0].policy.installation, "AVAILABLE");
 });
 
-test("generateClaudePlugin writes a Claude plugin with agents and MCP config", async () => {
+test("generateClaudePlugin omits inactive agent files and writes MCP config", async () => {
   const root = await tempProject();
   const plugin = await generateClaudePlugin(root);
 
@@ -114,9 +111,7 @@ test("generateClaudePlugin writes a Claude plugin with agents and MCP config", a
   assert.equal(manifest.name, "devcrew");
   assert.equal(manifest.version, DEVCREW_VERSION);
 
-  const agent = await readFile(join(plugin.path, "agents", "architect.md"), "utf8");
-  assert.match(agent, /name: architect/);
-  assert.match(agent, /technical architecture/);
+  await assert.rejects(() => stat(join(plugin.path, "agents")));
 
   const mcp = JSON.parse(await readFile(join(plugin.path, ".mcp.json"), "utf8"));
   assertVersionLockedMcpServer(mcp, "claude");

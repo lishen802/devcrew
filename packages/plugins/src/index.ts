@@ -3,7 +3,7 @@ import { access, copyFile, mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { DEFAULT_CONFIG, DEVCREW_NPM_PACKAGE, DEVCREW_VERSION, ROLE_SECTIONS } from "../../core/src/index.js";
+import { DEFAULT_CONFIG, DEVCREW_NPM_PACKAGE, DEVCREW_VERSION } from "../../core/src/index.js";
 
 export interface GeneratedPlugin {
   name: "devcrew";
@@ -43,46 +43,6 @@ async function writeCodexAssets(pluginRoot: string): Promise<void> {
   await mkdir(assetDir, { recursive: true });
   await copyFile(await bundledAssetPath("logo.png"), join(assetDir, "logo.png"));
   await copyFile(await bundledAssetPath("composer-icon.png"), join(assetDir, "composer-icon.png"));
-}
-
-function roleExpectations(name: string): string {
-  const sections = ROLE_SECTIONS[name as keyof typeof ROLE_SECTIONS];
-  if (!sections || sections.length === 0) {
-    return "";
-  }
-  return sections.map((s) => `- ${s.heading} (${s.description})`).join("\n");
-}
-
-async function writeRoleAgents(root: string, format: "codex" | "claude"): Promise<void> {
-  const roles = [
-    ["pm", "Product manager. Clarifies requirements, scope boundaries, success criteria, and requester approvals."],
-    ["architect", "technical architecture specialist. Designs implementation, deployment, interfaces, and review criteria."],
-    ["implementer", "Implementation engineer. Writes code according to approved architecture and discovered standards."],
-    ["tester", "Testing and acceptance specialist. Verifies functionality, regressions, and acceptance evidence."],
-  ] as const;
-
-  if (format === "claude") {
-    const agentDir = join(root, "agents");
-    await mkdir(agentDir, { recursive: true });
-    for (const [name, description] of roles) {
-      await writeFile(
-        join(agentDir, `${name}.md`),
-        `---\nname: ${name}\ndescription: ${description}\ntools: Read, Grep, Glob, Bash\n---\n\nYou are the DevCrew ${name} role. ${description} Return concise Markdown and follow the selected DevCrew execution policy.\n\nProduce these required sections:\n\n${roleExpectations(name)}\n`,
-        "utf8",
-      );
-    }
-    return;
-  }
-
-  const agentDir = join(root, "agents");
-  await mkdir(agentDir, { recursive: true });
-  for (const [name, description] of roles) {
-    await writeFile(
-      join(agentDir, `${name}.toml`),
-      `name = "${name}"\ndescription = "${description}"\ndeveloper_instructions = """\nYou are the DevCrew ${name} role. ${description}\nReturn concise Markdown and follow the selected DevCrew execution policy.\n\nProduce these required sections:\n${roleExpectations(name)}\n"""\n`,
-      "utf8",
-    );
-  }
 }
 
 function entrySkill(): string {
@@ -169,7 +129,6 @@ export async function generateCodexPlugin(root: string): Promise<GeneratedPlugin
       devcrew: mcpServerConfig("codex"),
     },
   });
-  await writeRoleAgents(pluginRoot, "codex");
   return { name: "devcrew", path: pluginRoot };
 }
 
@@ -215,7 +174,6 @@ export async function generateClaudePlugin(root: string): Promise<GeneratedPlugi
       devcrew: mcpServerConfig("claude"),
     },
   });
-  await writeRoleAgents(pluginRoot, "claude");
   return { name: "devcrew", path: pluginRoot };
 }
 

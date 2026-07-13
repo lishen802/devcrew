@@ -539,7 +539,7 @@ test("loadState normalizes execution workspace and preserves legacy field migrat
 });
 
 test("core exports the shared DevCrew version", () => {
-  assert.equal(DEVCREW_VERSION, "0.1.2");
+  assert.equal(DEVCREW_VERSION, "0.1.3");
 });
 
 test("discoverStandards prefers explicit DevCrew standards and includes project conventions", async () => {

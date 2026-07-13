@@ -35,7 +35,7 @@ codex plugin marketplace add lishen802/devcrew
 插件会用下面的命令启动 DevCrew MCP 服务：
 
 ```bash
-npm exec --silent --yes --package=@shenlee/devcrew@0.1.2 -- node -e "<DevCrew CLI wrapper>" -- serve --stdio
+npm exec --silent --yes --package=@shenlee/devcrew@0.1.3 -- node -e "<DevCrew CLI wrapper>" -- serve --stdio
 ```
 
 插件会锁定到已发布的 npm 包版本，因此用户不需要克隆源码，也不需要在安装时编译 TypeScript；只需要本机有 Node.js，并且 Codex 第一次启动 MCP 服务时可以访问网络。

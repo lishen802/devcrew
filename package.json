@@ -1,6 +1,6 @@
 {
   "name": "@shenlee/devcrew",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Multi-host agent workflow service for Codex and Claude Code.",
   "type": "module",
   "license": "Apache-2.0",

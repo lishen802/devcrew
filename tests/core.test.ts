@@ -808,3 +808,20 @@ test("discoverCoverageCommands discovers Python and Go coverage", async () => {
   await writeFile(join(goProject, "go.mod"), "module example.com/demo\n");
   assert.deepEqual(await discoverCoverageCommands(goProject), ["go test -cover ./..."]);
 });
+
+test("loadState marks pre-envelope role results as legacy", async () => {
+  const cwd = await tempProject();
+  const started = await startWorkflow({
+    cwd,
+    host: "codex",
+    mode: "feature",
+    request: "Migrate roles",
+  });
+  const path = runDir(cwd, started.runId);
+  const raw = JSON.parse(await readFile(join(path, "state.json"), "utf8")) as Record<string, unknown>;
+  raw.roles = [{ role: "pm", backend: "codex", summary: "old", markdown: "# Old", usedFallback: false }];
+  await writeFile(join(path, "state.json"), JSON.stringify(raw));
+
+  const role = (await loadState(cwd, started.runId)).roles[0] as unknown as { format?: string };
+  assert.equal(role.format, "legacy");
+});

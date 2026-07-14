@@ -42,6 +42,40 @@ export interface RoleSection {
   description: string;
 }
 
+export type RoleResultFormat = "legacy" | "structured";
+
+export interface CommandEvidence {
+  command: string;
+  exitCode: number;
+  output?: string;
+}
+
+export interface RoleQuestion {
+  id: string;
+  prompt: string;
+  context?: string;
+}
+
+export interface TestCaseEvidence {
+  id: string;
+  scenario: string;
+  type: "happy" | "edge" | "failure" | "regression";
+  expected: string;
+}
+
+export interface StructuredRoleData {
+  schemaVersion: 1;
+  role: "pm" | "architect" | "implementer" | "tester";
+  summary: string;
+  risks: string[];
+  evidence: CommandEvidence[];
+  questions?: RoleQuestion[];
+  decisions?: string[];
+  reviewDecision?: ArchitectureReviewDecision;
+  changedFiles?: string[];
+  testCases?: TestCaseEvidence[];
+}
+
 export const ROLE_SECTIONS: Record<Exclude<RoleResult["role"], "conductor">, RoleSection[]> = {
   pm: [
     { heading: "Functional Scope", description: "explicit In Scope and Out of Scope lists" },
@@ -94,6 +128,8 @@ export interface RoleResult {
   summary: string;
   markdown: string;
   usedFallback: boolean;
+  format: RoleResultFormat;
+  structured?: StructuredRoleData;
   questions?: string[];
   reviewDecision?: ArchitectureReviewDecision;
 }

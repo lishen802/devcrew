@@ -72,6 +72,7 @@ function conductorDecision(state: RunState, role: RoleResult["role"], gate: stri
     summary,
     markdown: `# Conductor Decision\n\n${summary}\n`,
     usedFallback: false,
+    format: "legacy",
   };
 }
 
@@ -274,6 +275,7 @@ function hostCompletionResult(state: RunState, summary: string): RoleResult {
     summary: `${role} completed through the native ${state.host} host: ${summary}`,
     markdown: `${renderArtifact(artifact, state).trim()}\n\n## Native Host Summary\n\n${summary}\n`,
     usedFallback: false,
+    format: "legacy",
   };
 }
 

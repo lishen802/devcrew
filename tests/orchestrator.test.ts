@@ -71,6 +71,7 @@ function validRoleResult(input: RoleRunInput): RoleResult {
     summary: `${input.role} completed`,
     markdown: `# ${input.role}\n\nCompleted ${input.phase}.\n`,
     usedFallback: false,
+    format: "legacy",
     reviewDecision: input.phase === "review" ? "approved" : undefined,
   };
 }
@@ -249,6 +250,7 @@ test("orchestrated SDK fallback artifacts include a warning and reason", async (
     summary: "Cannot find package @openai/codex-sdk",
     markdown: "# Requirements\n\nFallback.",
     usedFallback: true,
+    format: "legacy",
   });
   const started = await startOrchestratedWorkflow({
     cwd,
@@ -286,6 +288,7 @@ test("continueOrchestratedWorkflow passes prior artifacts into the phase role", 
       summary: "fake architecture",
       markdown: "# Fake Architecture\n",
       usedFallback: false,
+      format: "legacy",
     };
   };
 

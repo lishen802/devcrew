@@ -2,13 +2,23 @@ import { readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import { ensureRunDirectories, statePath } from "./paths.js";
-import { GATES, type GateName, type RunState } from "./types.js";
+import { GATES, type GateName, type RoleResult, type RunState } from "./types.js";
 
 function enabledGatesFromState(value: unknown): GateName[] {
   const configured = Array.isArray(value)
     ? value.filter((gate): gate is GateName => typeof gate === "string" && GATES.includes(gate as GateName))
     : [...GATES];
   return [...new Set<GateName>([...configured, "implementation-review", "testing"])];
+}
+
+function roleResultsFromState(value: unknown): RoleResult[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.filter((role): role is RoleResult => typeof role === "object" && role !== null).map((role) => ({
+    ...role,
+    format: role.format === "structured" ? "structured" : "legacy",
+  }));
 }
 
 export async function saveState(state: RunState): Promise<RunState> {
@@ -31,6 +41,7 @@ export async function loadState(cwd: string, runId: string): Promise<RunState> {
     ...parsed,
     executionMode: parsed.executionMode ?? "plan",
     executionPolicy: parsed.executionPolicy ?? "interactive-host",
+    roles: roleResultsFromState(parsed.roles),
     enabledGates: enabledGatesFromState(parsed.enabledGates),
     artifactDirectory: typeof parsed.artifactDirectory === "string" && parsed.artifactDirectory.trim().length > 0
       ? parsed.artifactDirectory

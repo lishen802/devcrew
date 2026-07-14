@@ -410,6 +410,7 @@ function fallbackResult(
     summary,
     markdown: `# ${title}\n\n${summary}\n`,
     usedFallback: true,
+    format: "legacy",
   };
 }
 
@@ -454,6 +455,7 @@ export async function runRole(input: RoleRunInput, deps: RunRoleDeps = {}): Prom
       summary: `${input.role} produced ${title} using the ${input.backend} SDK.`,
       markdown,
       usedFallback: false,
+      format: "legacy",
       questions: input.role === "pm" ? extractOpenQuestions(markdown) : undefined,
       reviewDecision,
     };

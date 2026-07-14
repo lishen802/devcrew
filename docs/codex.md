@@ -13,7 +13,7 @@ Restart Codex, open the plugin directory, select the DevCrew marketplace, and in
 The plugin launches the MCP server with:
 
 ```bash
-npm exec --silent --yes --package=@shenlee/devcrew@0.1.3 -- node -e "<DevCrew CLI wrapper>" -- serve --stdio
+npm exec --silent --yes --package=@shenlee/devcrew@0.1.4 -- node -e "<DevCrew CLI wrapper>" -- serve --stdio
 ```
 
 Use this path when you want to use DevCrew without cloning the repository first. The version is locked to the published npm package that matches the plugin manifest.
@@ -83,7 +83,7 @@ npm install -g @shenlee/devcrew --include=optional
 
 ## Marketplace smoke test
 
-After publishing `@shenlee/devcrew@0.1.3`, run the real marketplace smoke test. Do not treat this as a pre-publication check because the plugin is locked to that npm version:
+After publishing `@shenlee/devcrew@0.1.4`, run the real marketplace smoke test. Do not treat this as a pre-publication check because the plugin is locked to that npm version:
 
 ```bash
 npm run smoke:codex-plugin

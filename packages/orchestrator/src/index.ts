@@ -51,9 +51,10 @@ import {
 const COMMAND_TIMEOUT_MS = 300_000;
 
 type RoleRunner = (input: RoleRunInput) => Promise<RoleResult>;
+type ExecutingRole = Exclude<RoleResult["role"], "conductor">;
 
-function roleForPhase(phase: Phase): RoleResult["role"] | undefined {
-  const roles: Partial<Record<Phase, RoleResult["role"]>> = {
+function roleForPhase(phase: Phase): ExecutingRole | undefined {
+  const roles: Partial<Record<Phase, ExecutingRole>> = {
     requirements: "pm",
     architecture: "architect",
     implementation: "implementer",

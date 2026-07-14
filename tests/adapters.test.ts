@@ -6,6 +6,7 @@ import {
   extractArchitectureReviewDecision,
   HOST_SDK_PACKAGES,
   missingRoleSections,
+  parseRoleResultOutput,
   renderRolePrompt,
   resolveBackendName,
   roleGuidance,
@@ -108,6 +109,151 @@ test("architecture review prompts and parses a structured decision", () => {
     "changes_required",
   );
   assert.equal(extractArchitectureReviewDecision("## Review Decision\n\nDecision: uncertain\n"), undefined);
+});
+
+test("runRole accepts a marked structured PM role result and removes its protocol block", async () => {
+  const loadModule: ModuleLoader = async () => ({
+    Codex: class {
+      startThread() {
+        return {
+          run: async () => ({
+            finalResponse: `<!-- devcrew-role-result -->
+\`\`\`json
+{"schemaVersion":1,"role":"pm","summary":"Need scope","risks":[],"evidence":[],"questions":[{"id":"format","prompt":"Which formats?"}]}
+\`\`\`
+# Requirements
+
+## Functional Scope
+
+## Users and Scenarios
+
+## Acceptance Criteria
+
+## Priorities
+
+## Open Questions
+`,
+          }),
+        };
+      }
+    },
+  });
+
+  const result = await runRole({
+    backend: "codex",
+    role: "pm",
+    phase: "requirements",
+    request: "Add exports",
+    mode: "feature",
+    cwd: process.cwd(),
+    standards: "Use TypeScript strict mode.",
+    artifactPath: "docs/devcrew/dc-demo/requirements.md",
+  }, { loadModule });
+
+  assert.equal(result.format, "structured");
+  assert.deepEqual(result.questions, ["Which formats?"]);
+  assert.equal(result.structured?.questions?.[0]?.id, "format");
+  assert.doesNotMatch(result.markdown, /devcrew-role-result/);
+});
+
+test("runRole rejects malformed marked role output in apply mode", async () => {
+  const loadModule: ModuleLoader = async () => ({
+    Codex: class {
+      startThread() {
+        return {
+          run: async () => ({
+            finalResponse: `<!-- devcrew-role-result -->
+\`\`\`json
+{"schemaVersion":1,
+\`\`\`
+# Implementation
+
+## Implementation Summary
+
+## Standards Compliance
+
+## Changed Files
+
+## Tests Added or Updated
+`,
+          }),
+        };
+      }
+    },
+  });
+
+  await assert.rejects(
+    () => runRole({
+      backend: "codex",
+      role: "implementer",
+      phase: "implementation",
+      request: "Change files",
+      mode: "feature",
+      executionMode: "apply",
+      executionPolicy: "headless-restricted",
+      cwd: process.cwd(),
+      standards: "Use TypeScript strict mode.",
+      artifactPath: "docs/devcrew/dc-demo/implementation-plan.md",
+    }, { loadModule }),
+    /marked structured role result/i,
+  );
+});
+
+test("renderRolePrompt requests the marked structured role protocol", () => {
+  const prompt = renderRolePrompt({
+    role: "tester",
+    phase: "testing",
+    request: "Test exports",
+    mode: "feature",
+    standards: "Run npm test.",
+    artifactPath: "docs/devcrew/dc-demo/test-report.md",
+  });
+
+  assert.match(prompt, /<!-- devcrew-role-result -->/);
+  assert.match(prompt, /"schemaVersion":1/);
+});
+
+test("parseRoleResultOutput rejects invalid claimed structured result fields", () => {
+  const marked = (value: unknown) => `<!-- devcrew-role-result -->
+\`\`\`json
+${JSON.stringify(value)}
+\`\`\`
+# Requirements`;
+  const valid = {
+    schemaVersion: 1,
+    role: "pm",
+    summary: "Need scope",
+    risks: [],
+    evidence: [],
+    questions: [{ id: "format", prompt: "Which formats?" }],
+  };
+
+  assert.throws(
+    () => parseRoleResultOutput("pm", "requirements", `${marked(valid)}\n${marked(valid)}`),
+    /exactly once/i,
+  );
+  assert.throws(
+    () => parseRoleResultOutput("pm", "requirements", marked({ ...valid, schemaVersion: 2 })),
+    /schemaVersion/i,
+  );
+  assert.throws(
+    () => parseRoleResultOutput("pm", "requirements", marked({ ...valid, role: "tester" })),
+    /role must be pm/i,
+  );
+  assert.throws(
+    () => parseRoleResultOutput("pm", "requirements", marked({
+      ...valid,
+      questions: [valid.questions[0], valid.questions[0]],
+    })),
+    /unique/i,
+  );
+  assert.throws(
+    () => parseRoleResultOutput("pm", "requirements", marked({
+      ...valid,
+      evidence: [{ command: "npm test", exitCode: 0.5 }],
+    })),
+    /exitCode must be an integer/i,
+  );
 });
 
 test("runRole falls back to deterministic local output when host SDKs are unavailable", async () => {

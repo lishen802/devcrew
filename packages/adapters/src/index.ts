@@ -6,6 +6,7 @@ import type {
   ExecutionPolicy,
   Host,
   Phase,
+  StructuredRoleData,
   RoleResult,
   RunState,
   WorkflowMode,
@@ -18,7 +19,7 @@ export interface BackendResolutionInput {
 
 export interface RoleRunInput {
   backend: BackendName;
-  role: RoleResult["role"];
+  role: Exclude<RoleResult["role"], "conductor">;
   phase: Phase;
   request: string;
   mode: WorkflowMode;
@@ -101,6 +102,156 @@ export function extractArchitectureReviewDecision(markdown: string): "approved" 
   return match?.[1] as "approved" | "changes_required" | undefined;
 }
 
+const STRUCTURED_RESULT_MARKER = "<!-- devcrew-role-result -->";
+const STRUCTURED_RESULT_BLOCK = /<!--\s*devcrew-role-result\s*-->\s*```json\s*\r?\n([\s\S]*?)\r?\n```/g;
+
+function structuredOutputError(role: RoleResult["role"], reason: string): RoleOutputValidationError {
+  return new RoleOutputValidationError(role, [`marked structured role result: ${reason}`]);
+}
+
+function asRecord(value: unknown, role: RoleResult["role"], field: string): Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw structuredOutputError(role, `${field} must be an object`);
+  }
+  return value as Record<string, unknown>;
+}
+
+function asNonEmptyString(value: unknown, role: RoleResult["role"], field: string): string {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    throw structuredOutputError(role, `${field} must be a non-empty string`);
+  }
+  return value.trim();
+}
+
+function asStringArray(value: unknown, role: RoleResult["role"], field: string): string[] {
+  if (!Array.isArray(value) || value.some((entry) => typeof entry !== "string" || entry.trim().length === 0)) {
+    throw structuredOutputError(role, `${field} must be an array of non-empty strings`);
+  }
+  return value.map((entry) => (entry as string).trim());
+}
+
+function asEvidence(value: unknown, role: RoleResult["role"]): StructuredRoleData["evidence"] {
+  if (!Array.isArray(value)) {
+    throw structuredOutputError(role, "evidence must be an array");
+  }
+  return value.map((entry, index) => {
+    const evidence = asRecord(entry, role, `evidence[${index}]`);
+    const command = asNonEmptyString(evidence.command, role, `evidence[${index}].command`);
+    if (!Number.isInteger(evidence.exitCode)) {
+      throw structuredOutputError(role, `evidence[${index}].exitCode must be an integer`);
+    }
+    if (evidence.output !== undefined && typeof evidence.output !== "string") {
+      throw structuredOutputError(role, `evidence[${index}].output must be a string`);
+    }
+    return { command, exitCode: evidence.exitCode as number, output: evidence.output as string | undefined };
+  });
+}
+
+function asQuestions(value: unknown, role: RoleResult["role"]): NonNullable<StructuredRoleData["questions"]> {
+  if (!Array.isArray(value)) {
+    throw structuredOutputError(role, "questions must be an array");
+  }
+  const ids = new Set<string>();
+  return value.map((entry, index) => {
+    const question = asRecord(entry, role, `questions[${index}]`);
+    const id = asNonEmptyString(question.id, role, `questions[${index}].id`);
+    if (ids.has(id)) {
+      throw structuredOutputError(role, `questions[${index}].id must be unique`);
+    }
+    ids.add(id);
+    const prompt = asNonEmptyString(question.prompt, role, `questions[${index}].prompt`);
+    if (question.context !== undefined && typeof question.context !== "string") {
+      throw structuredOutputError(role, `questions[${index}].context must be a string`);
+    }
+    return { id, prompt, context: question.context as string | undefined };
+  });
+}
+
+function parseStructuredRoleData(
+  role: Exclude<RoleResult["role"], "conductor">,
+  phase: Phase,
+  raw: unknown,
+): StructuredRoleData {
+  const value = asRecord(raw, role, "result");
+  if (value.schemaVersion !== 1) {
+    throw structuredOutputError(role, "schemaVersion must be 1");
+  }
+  if (value.role !== role) {
+    throw structuredOutputError(role, `role must be ${role}`);
+  }
+  const data: StructuredRoleData = {
+    schemaVersion: 1,
+    role,
+    summary: asNonEmptyString(value.summary, role, "summary"),
+    risks: asStringArray(value.risks, role, "risks"),
+    evidence: asEvidence(value.evidence, role),
+  };
+  if (role === "pm") {
+    data.questions = asQuestions(value.questions, role);
+  } else if (role === "architect") {
+    data.decisions = asStringArray(value.decisions, role, "decisions");
+    if (phase === "review") {
+      if (value.reviewDecision !== "approved" && value.reviewDecision !== "changes_required") {
+        throw structuredOutputError(role, "reviewDecision must be approved or changes_required");
+      }
+      data.reviewDecision = value.reviewDecision;
+    }
+  } else if (role === "implementer") {
+    data.changedFiles = asStringArray(value.changedFiles, role, "changedFiles");
+  } else {
+    if (!Array.isArray(value.testCases)) {
+      throw structuredOutputError(role, "testCases must be an array");
+    }
+    data.testCases = value.testCases.map((entry, index) => {
+      const testCase = asRecord(entry, role, `testCases[${index}]`);
+      const type = testCase.type;
+      if (type !== "happy" && type !== "edge" && type !== "failure" && type !== "regression") {
+        throw structuredOutputError(role, `testCases[${index}].type is invalid`);
+      }
+      return {
+        id: asNonEmptyString(testCase.id, role, `testCases[${index}].id`),
+        scenario: asNonEmptyString(testCase.scenario, role, `testCases[${index}].scenario`),
+        type,
+        expected: asNonEmptyString(testCase.expected, role, `testCases[${index}].expected`),
+      };
+    });
+  }
+  return data;
+}
+
+export function parseRoleResultOutput(
+  role: Exclude<RoleResult["role"], "conductor">,
+  phase: Phase,
+  output: string,
+): Pick<RoleResult, "format" | "markdown" | "structured" | "questions" | "reviewDecision"> {
+  if (!output.includes(STRUCTURED_RESULT_MARKER)) {
+    return {
+      format: "legacy",
+      markdown: output,
+      questions: role === "pm" ? extractOpenQuestions(output) : undefined,
+      reviewDecision: phase === "review" ? extractArchitectureReviewDecision(output) : undefined,
+    };
+  }
+  const blocks = [...output.matchAll(STRUCTURED_RESULT_BLOCK)];
+  if (blocks.length !== 1) {
+    throw structuredOutputError(role, blocks.length === 0 ? "must use a JSON fenced block" : "must appear exactly once");
+  }
+  let raw: unknown;
+  try {
+    raw = JSON.parse(blocks[0]?.[1] ?? "");
+  } catch {
+    throw structuredOutputError(role, "contains invalid JSON");
+  }
+  const structured = parseStructuredRoleData(role, phase, raw);
+  return {
+    format: "structured",
+    markdown: output.slice(0, blocks[0]?.index).concat(output.slice((blocks[0]?.index ?? 0) + (blocks[0]?.[0].length ?? 0))).trim(),
+    structured,
+    questions: structured.questions?.map((question) => question.prompt),
+    reviewDecision: structured.reviewDecision,
+  };
+}
+
 export function renderRolePrompt(input: Omit<RoleRunInput, "backend" | "cwd">): string {
   const executionMode = input.executionMode ?? "plan";
   const answers = input.answers ?? [];
@@ -147,6 +298,13 @@ export function renderRolePrompt(input: Omit<RoleRunInput, "backend" | "cwd">): 
     `Act as the DevCrew ${input.role} role and produce a complete, well-structured Markdown document for the ${input.phase} phase.`,
     "Keep scope aligned with the approved gates and the selected DevCrew execution policy.",
     permissionInstruction,
+    "",
+    "Return this protocol block first:",
+    STRUCTURED_RESULT_MARKER,
+    "```json",
+    `{\"schemaVersion\":1,\"role\":\"${input.role}\",\"summary\":\"...\",\"risks\":[],\"evidence\":[]}`,
+    "```",
+    "Then return the required Markdown H2 sections. Do not include a second marked result block.",
     "",
     "Required Sections:",
     ...roleGuidance(input.role),
@@ -444,19 +602,21 @@ export async function runRole(input: RoleRunInput, deps: RunRoleDeps = {}): Prom
       input.backend === "codex"
         ? await runWithCodex(input, prompt, loadModule)
         : await runWithClaude(input, prompt, loadModule);
-    assertRoleSections(input.role, markdown);
-    const reviewDecision = input.phase === "review" ? extractArchitectureReviewDecision(markdown) : undefined;
+    const parsed = parseRoleResultOutput(input.role, input.phase, markdown);
+    assertRoleSections(input.role, parsed.markdown);
+    const reviewDecision = parsed.reviewDecision;
     if (input.phase === "review" && !reviewDecision) {
       throw new RoleOutputValidationError(input.role, ["Review Decision"]);
     }
     return {
       role: input.role,
       backend: input.backend,
-      summary: `${input.role} produced ${title} using the ${input.backend} SDK.`,
-      markdown,
+      summary: parsed.structured?.summary ?? `${input.role} produced ${title} using the ${input.backend} SDK.`,
+      markdown: parsed.markdown,
       usedFallback: false,
-      format: "legacy",
-      questions: input.role === "pm" ? extractOpenQuestions(markdown) : undefined,
+      format: parsed.format,
+      structured: parsed.structured,
+      questions: parsed.questions,
       reviewDecision,
     };
   } catch (error) {

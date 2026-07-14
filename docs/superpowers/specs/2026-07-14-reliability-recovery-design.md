@@ -22,7 +22,9 @@ untyped JSON into defaults.
   `verifyCommands`, `lintCommands`, `coverageCommands`, and `workflow`.
 - `defaultBackend`, `executionMode`, and every workflow gate must be members
   of their exported enums.
-- Command lists must be arrays of non-empty strings. Empty lists remain valid.
+- Command lists, when supplied, must be arrays of non-empty strings. Empty
+  lists remain valid; omitted command lists retain their version-1 default of
+  an empty array for backward compatibility.
 - `workflow` may contain only `gates` and `artifactDirectory`; gates must be
   unique. The existing runtime rule still makes implementation review and
   testing mandatory.
@@ -88,4 +90,3 @@ return normal structured MCP errors.
 - Orchestrator/service tests cover abort audit persistence, worktree cleanup,
   active-run clearing, idempotency, terminal-state blocking, stale-lock
   recovery, and recovery cleanup after a simulated failed abort cleanup.
-

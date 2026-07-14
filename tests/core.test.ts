@@ -18,6 +18,7 @@ import {
   getArtifact,
   loadState,
   rejectWorkflow,
+  readConfig,
   runDir,
   saveState,
   startWorkflow,
@@ -97,6 +98,87 @@ test("startWorkflow writes artifacts under the configured artifact directory", a
 
   assert.equal(state.artifactDirectory, "artifacts/devcrew");
   assert.match(state.artifacts.requirements ?? "", /artifacts\/devcrew\//);
+});
+
+test("readConfig rejects unsafe and malformed version-1 configuration", async () => {
+  const base = {
+    version: 1,
+    defaultBackend: "host-preferred",
+    executionMode: "plan",
+    verifyCommands: [],
+    lintCommands: [],
+    coverageCommands: [],
+    workflow: {
+      gates: ["requirements", "architecture", "implementation"],
+      artifactDirectory: "docs/devcrew",
+    },
+  };
+  const cases: Array<{ name: string; config: Record<string, unknown>; error: RegExp }> = [
+    {
+      name: "unknown top-level key",
+      config: { ...base, unexpected: true },
+      error: /unknown key.*unexpected/i,
+    },
+    {
+      name: "unknown workflow key",
+      config: { ...base, workflow: { ...base.workflow, extra: true } },
+      error: /workflow.*unknown key.*extra/i,
+    },
+    {
+      name: "unknown gate",
+      config: { ...base, workflow: { ...base.workflow, gates: ["requirements", "release"] } },
+      error: /workflow\.gates.*release/i,
+    },
+    {
+      name: "duplicate gate",
+      config: { ...base, workflow: { ...base.workflow, gates: ["requirements", "requirements"] } },
+      error: /workflow\.gates.*duplicate/i,
+    },
+    {
+      name: "empty command",
+      config: { ...base, verifyCommands: [""] },
+      error: /verifyCommands\[0\].*non-empty string/i,
+    },
+    {
+      name: "absolute artifact directory",
+      config: { ...base, workflow: { ...base.workflow, artifactDirectory: "/tmp/devcrew" } },
+      error: /workflow\.artifactDirectory.*relative/i,
+    },
+    {
+      name: "artifact directory outside repository",
+      config: { ...base, workflow: { ...base.workflow, artifactDirectory: "../outside" } },
+      error: /workflow\.artifactDirectory.*inside/i,
+    },
+  ];
+
+  for (const testCase of cases) {
+    const cwd = await tempProject();
+    await mkdir(join(cwd, ".devcrew"), { recursive: true });
+    await writeFile(join(cwd, ".devcrew", "config.json"), JSON.stringify(testCase.config));
+    await assert.rejects(() => readConfig(cwd), testCase.error, testCase.name);
+  }
+});
+
+test("readConfig defaults omitted command lists while validating supplied commands", async () => {
+  const cwd = await tempProject();
+  await mkdir(join(cwd, ".devcrew"), { recursive: true });
+  await writeFile(
+    join(cwd, ".devcrew", "config.json"),
+    JSON.stringify({
+      version: 1,
+      defaultBackend: "codex",
+      executionMode: "apply",
+      verifyCommands: ["npm test"],
+      workflow: {
+        gates: ["requirements", "architecture", "implementation"],
+        artifactDirectory: "docs/devcrew",
+      },
+    }),
+  );
+
+  const config = await readConfig(cwd);
+  assert.deepEqual(config.lintCommands, []);
+  assert.deepEqual(config.coverageCommands, []);
 });
 
 test("apply workflows persist an explicit execution policy and reject unknown policies", async () => {

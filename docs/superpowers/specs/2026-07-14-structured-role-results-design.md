@@ -21,7 +21,6 @@ The core package will define a versioned role-result envelope with common fields
 - `schemaVersion: 1`
 - `role`
 - `summary`
-- `markdown`
 - `risks`
 - `evidence`
 
@@ -42,9 +41,12 @@ text.
 
 ## Adapter Parsing And Compatibility
 
-SDK prompts will request one fenced `json` block labelled as the DevCrew result,
-followed by the existing required Markdown H2 sections. The adapter extracts and
-validates that JSON before accepting a structured result.
+SDK prompts will request one `<!-- devcrew-role-result -->` marker followed by a
+fenced `json` block containing the DevCrew result, then the existing required
+Markdown H2 sections. The marker avoids treating incidental JSON examples in a
+human artifact as protocol data. The adapter extracts and validates that JSON
+before accepting a structured result, removes the marked block, and uses the
+remaining Markdown as the role result's `markdown` field.
 
 If a JSON block is absent, the adapter preserves existing Markdown validation and
 the current PM-question and architecture-review decision parsing. It returns a

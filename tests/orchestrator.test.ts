@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { approveWorkflow, getWorkflowStatus, rejectWorkflow, startWorkflow } from "../packages/core/src/index.js";
+import { approveWorkflow, getWorkflowStatus, rejectWorkflow, startWorkflow, statePath } from "../packages/core/src/index.js";
 import {
   answerOrchestratedWorkflow,
   approveOrchestratedWorkflow,
@@ -585,6 +585,24 @@ test("missing verification blocks promotion until an explicit waiver is recorded
     () => approveOrchestratedWorkflow({ cwd, runId: tested.runId, gate: "testing" }),
     /not pending approval/i,
   );
+
+  const persistedPath = statePath(cwd, tested.runId);
+  const blockedState = JSON.parse(await readFile(persistedPath, "utf8"));
+  await writeFile(
+    persistedPath,
+    `${JSON.stringify({
+      ...blockedState,
+      status: "awaiting_approval",
+      gates: { ...blockedState.gates, testing: "pending" },
+      verificationStatus: "not_run",
+      verificationWaiver: undefined,
+    }, null, 2)}\n`,
+  );
+  await assert.rejects(
+    () => approveOrchestratedWorkflow({ cwd, runId: tested.runId, gate: "testing" }),
+    /Verification must pass before promotion/i,
+  );
+  await writeFile(persistedPath, `${JSON.stringify(blockedState, null, 2)}\n`);
 
   const waived = await waiveOrchestratedVerification({
     cwd,

@@ -178,6 +178,40 @@ test("devcrew_start infers host from DEVCREW_HOST when host is omitted", async (
   }
 });
 
+test("MCP status exposes structured role results and their format", async () => {
+  const cwd = await tempProject();
+  const runner = async (input: RoleRunInput): Promise<RoleResult> => ({
+    role: input.role,
+    backend: input.backend,
+    summary: "Need export scope",
+    markdown: "# Requirements\n",
+    usedFallback: false,
+    format: "structured",
+    structured: {
+      schemaVersion: 1,
+      role: "pm",
+      summary: "Need export scope",
+      risks: [],
+      evidence: [],
+      questions: [{ id: "format", prompt: "Which export formats are required?" }],
+    },
+  });
+  const started = await startOrchestratedWorkflow({
+    cwd,
+    host: "codex",
+    mode: "feature",
+    request: "Add billing export",
+    backend: "codex",
+  }, runner);
+
+  const status = await callDevCrewTool("devcrew_status", { cwd, runId: started.runId });
+
+  assert.equal(status.isError, false);
+  assert.match(status.content[0].text, /role_format=structured/);
+  const state = status.structuredContent?.state as { roles: Array<{ structured?: { questions?: Array<{ id: string }> } }> };
+  assert.equal(state.roles.at(-1)?.structured?.questions?.[0]?.id, "format");
+});
+
 test("devcrew_artifact exposes the implementation review artifact", () => {
   const artifact = listDevCrewTools().find((tool) => tool.name === "devcrew_artifact");
   assert.ok(artifact);

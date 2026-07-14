@@ -22,6 +22,19 @@ It contains:
 Role behavior is defined by the DevCrew MCP service and its shared runtime role
 schema. The plugin intentionally does not bundle inactive subagent templates.
 
+## Structured role results
+
+SDK roles should return one `<!-- devcrew-role-result -->` marker followed by a
+JSON fenced block with `schemaVersion: 1`, then the human-readable Markdown
+artifact. The JSON carries the role summary, risks, command evidence, and
+role-specific fields such as PM questions, architecture decisions, changed
+files, or test cases. DevCrew removes the marked block before saving the
+Markdown artifact and exposes the validated data through MCP state.
+
+Markdown-only output remains supported as `role_format=legacy`. A missing marker
+uses this compatibility path; a present marker with malformed, ambiguous, or
+schema-invalid JSON is rejected and never silently downgraded.
+
 For local plugin testing:
 
 ```bash

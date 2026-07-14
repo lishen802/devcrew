@@ -220,7 +220,8 @@ function summarizeState(state: RunState): string {
   const role = state.roles.at(-1);
   const roleFallback =
     role?.usedFallback === true ? (role.backend === "local" ? "local" : "sdk") : role ? "none" : "none";
-  return `Run ${state.runId}: phase=${state.phase}, status=${state.status}, execution_mode=${state.executionMode}, pending_gate=${pendingGate}, role_fallback=${roleFallback}`;
+  const roleFormat = role?.format ?? "none";
+  return `Run ${state.runId}: phase=${state.phase}, status=${state.status}, execution_mode=${state.executionMode}, pending_gate=${pendingGate}, role_fallback=${roleFallback}, role_format=${roleFormat}`;
 }
 
 function success(text: string, structuredContent?: Record<string, unknown>): ToolResult {

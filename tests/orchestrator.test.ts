@@ -35,6 +35,24 @@ async function initGitRepo(cwd: string): Promise<void> {
   await execFileAsync("git", ["commit", "-m", "Initial commit"], { cwd });
 }
 
+async function configureSuccessfulVerification(cwd: string): Promise<void> {
+  await mkdir(join(cwd, ".devcrew"), { recursive: true });
+  const verifyCommand = `${process.execPath} -e "console.log('devcrew-verify-ok')"`;
+  await writeFile(
+    join(cwd, ".devcrew", "config.json"),
+    `${JSON.stringify({
+      version: 1,
+      defaultBackend: "codex",
+      executionMode: "apply",
+      workflow: {
+        gates: ["requirements", "architecture", "implementation", "testing"],
+        artifactDirectory: "docs/devcrew",
+      },
+      verifyCommands: [verifyCommand],
+    }, null, 2)}\n`,
+  );
+}
+
 async function pathExists(path: string): Promise<boolean> {
   try {
     await access(path);
@@ -530,8 +548,40 @@ test("failed verification blocks promotion until an explicit waiver is recorded"
   assert.equal(await readFile(join(cwd, "generated.ts"), "utf8"), "export const generated = true;\n");
 });
 
+test("missing verification blocks promotion until an explicit waiver is recorded", async () => {
+  const cwd = await tempProject();
+  await initGitRepo(cwd);
+  const runner = async (input: RoleRunInput): Promise<RoleResult> => {
+    if (input.phase === "execution") {
+      await writeFile(join(input.cwd, "generated.ts"), "export const generated = true;\n");
+    }
+    return validRoleResult(input);
+  };
+
+  const tested = await advanceApplyToTestingGate(cwd, runner);
+  assert.equal(tested.verificationStatus, "not_run");
+  assert.equal(tested.gates.testing, "rejected");
+  assert.equal(tested.status, "awaiting_input");
+  await assert.rejects(
+    () => approveOrchestratedWorkflow({ cwd, runId: tested.runId, gate: "testing" }),
+    /not pending approval/i,
+  );
+
+  const waived = await waiveOrchestratedVerification({
+    cwd,
+    runId: tested.runId,
+    reason: "The fixture has no available test runner; reviewer accepts the documented risk.",
+  });
+  assert.equal(waived.gates.testing, "pending");
+  assert.equal(waived.status, "awaiting_approval");
+
+  await approveOrchestratedWorkflow({ cwd, runId: tested.runId, gate: "testing" });
+  assert.equal(await readFile(join(cwd, "generated.ts"), "utf8"), "export const generated = true;\n");
+});
+
 test("testing approval promotes the reviewed patch exactly once", async () => {
   const cwd = await tempProject();
+  await configureSuccessfulVerification(cwd);
   await initGitRepo(cwd);
   const runner = async (input: RoleRunInput): Promise<RoleResult> => {
     if (input.phase === "execution") {
@@ -597,6 +647,7 @@ test("testing approval promotes the reviewed patch exactly once", async () => {
 
 test("rejected testing returns to execution without touching the requester repository", async () => {
   const cwd = await tempProject();
+  await configureSuccessfulVerification(cwd);
   await initGitRepo(cwd);
   const runner = async (input: RoleRunInput): Promise<RoleResult> => {
     if (input.phase === "execution") {

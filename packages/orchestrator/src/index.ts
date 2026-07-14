@@ -239,12 +239,15 @@ function verificationStatusFor(results: VerificationResult[]): VerificationStatu
 }
 
 function setTestingGateFromVerification(state: RunState): void {
-  if (state.verificationStatus === "failed") {
+  if (state.verificationStatus !== "passed") {
     state.gates.testing = "rejected";
     state.status = "awaiting_input";
     state.feedback.push({
       gate: "testing",
-      message: "Automated verification failed. Inspect the test report, revise the implementation, or record an explicit verification waiver with its reason.",
+      message:
+        state.verificationStatus === "failed"
+          ? "Automated verification failed. Inspect the test report, revise the implementation, or record an explicit verification waiver with its reason."
+          : "No verification evidence was recorded. Configure or run validation, revise the implementation, or record an explicit verification waiver with its reason.",
       createdAt: now(),
     });
     return;
@@ -552,8 +555,8 @@ export async function approveOrchestratedWorkflow(input: ApproveWorkflowInput): 
     return cleanupAfterApproval(before);
   }
   if (promotingTesting) {
-    if (before.verificationStatus === "failed" && !before.verificationWaiver) {
-      throw new Error("Failed verification cannot be promoted without an explicit verification waiver");
+    if (before.verificationStatus !== "passed" && !before.verificationWaiver) {
+      throw new Error("Verification must pass before promotion or have an explicit verification waiver");
     }
     await promoteExecutionChanges(before);
     let approved: RunState;

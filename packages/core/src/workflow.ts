@@ -301,9 +301,9 @@ export async function waiveVerificationWorkflow(input: WaiveVerificationInput): 
     state.phase !== "testing" ||
     state.status !== "awaiting_input" ||
     state.gates.testing !== "rejected" ||
-    state.verificationStatus !== "failed"
+    (state.verificationStatus !== "failed" && state.verificationStatus !== "not_run")
   ) {
-    throw new Error("A verification waiver is only available after failed apply-mode testing");
+    throw new Error("A verification waiver is only available after failed or missing apply-mode verification");
   }
   state.verificationWaiver = {
     reason: parseWaiverReason(input.reason),

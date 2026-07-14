@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { access, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { access, mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -161,6 +161,21 @@ test("MCP tool calls create, inspect, approve, continue, and read artifacts", as
 
 test("MCP testing approval promotes an isolated patch once", async () => {
   const cwd = await tempProject();
+  await mkdir(join(cwd, ".devcrew"), { recursive: true });
+  const verifyCommand = `${process.execPath} -e "console.log('devcrew-verify-ok')"`;
+  await writeFile(
+    join(cwd, ".devcrew", "config.json"),
+    `${JSON.stringify({
+      version: 1,
+      defaultBackend: "codex",
+      executionMode: "apply",
+      workflow: {
+        gates: ["requirements", "architecture", "implementation", "testing"],
+        artifactDirectory: "docs/devcrew",
+      },
+      verifyCommands: [verifyCommand],
+    }, null, 2)}\n`,
+  );
   await execFileAsync("git", ["init"], { cwd });
   await execFileAsync("git", ["config", "user.email", "devcrew@example.test"], { cwd });
   await execFileAsync("git", ["config", "user.name", "DevCrew Test"], { cwd });

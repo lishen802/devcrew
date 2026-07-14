@@ -1,18 +1,22 @@
 import {
+  clearActiveRunIfMatches,
   getArtifact,
   getActiveRunId,
   getWorkflowStatus,
+  recoverRepositoryLock,
   setActiveRun,
   withRepositoryLock,
   type Host,
   type RunState,
 } from "../../core/src/index.js";
 import {
+  abortOrchestratedWorkflow,
   answerOrchestratedWorkflow,
   approveOrchestratedWorkflow,
   completeOrchestratedExecution,
   continueOrchestratedWorkflow,
   rejectOrchestratedWorkflow,
+  recoverOrchestratedWorkflow,
   startOrchestratedWorkflow,
   waiveOrchestratedVerification,
 } from "../../orchestrator/src/index.js";
@@ -69,6 +73,15 @@ async function withMutationLock<T>(args: Record<string, unknown>, action: () => 
 export function listDevCrewTools(): DevCrewTool[] {
   return [
     {
+      name: "devcrew_abort",
+      description: "Abort a nonterminal run, preserve its audit evidence, and clean its isolated worktree when possible.",
+      inputSchema: {
+        type: "object",
+        required: ["cwd", "reason"],
+        properties: { cwd: cwdProperty, runId: runIdProperty, reason: { type: "string" } },
+      },
+    },
+    {
       name: "devcrew_start",
       description: "Create a new gated DevCrew workflow run.",
       inputSchema: {
@@ -91,6 +104,15 @@ export function listDevCrewTools(): DevCrewTool[] {
           request: { type: "string" },
           backend: { type: "string", enum: ["codex", "claude", "local"] },
         },
+      },
+    },
+    {
+      name: "devcrew_recover",
+      description: "Explicitly clear a confirmed stale lock and retry cleanup for a terminal run without executing an agent.",
+      inputSchema: {
+        type: "object",
+        required: ["cwd"],
+        properties: { cwd: cwdProperty, runId: runIdProperty },
       },
     },
     {
@@ -225,6 +247,31 @@ export async function callDevCrewTool(name: string, args: Record<string, unknown
         const state = await startOrchestratedWorkflow(withInferredHost(args) as never);
         await setActiveRun(state.cwd, state.runId);
         return success(`${summarizeState(state)}. Review ${state.artifacts.requirements}`, { state });
+      });
+    }
+    if (name === "devcrew_abort") {
+      return await withMutationLock(args, async () => {
+        const runArgs = await withActiveRun(args);
+        const state = await abortOrchestratedWorkflow(runArgs as never);
+        await clearActiveRunIfMatches(state.cwd, state.runId);
+        return success(`${summarizeState(state)}. Run aborted.`, { state });
+      });
+    }
+    if (name === "devcrew_recover") {
+      if (typeof args.cwd !== "string" || !args.cwd.trim()) {
+        throw new Error("cwd must be a non-empty string");
+      }
+      const recoveredLock = await recoverRepositoryLock(args.cwd);
+      if (typeof args.runId !== "string" || !args.runId.trim()) {
+        return success(
+          recoveredLock ? "Repository lock recovery completed." : "No stale repository lock was present.",
+          { recoveredLock },
+        );
+      }
+      return await withMutationLock(args, async () => {
+        const runArgs = await withActiveRun(args);
+        const state = await recoverOrchestratedWorkflow(runArgs as never);
+        return success(`${summarizeState(state)}. Recovery cleanup completed.`, { state });
       });
     }
     if (name === "devcrew_status") {

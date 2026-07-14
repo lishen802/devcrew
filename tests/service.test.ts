@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 
 import { callDevCrewTool, listDevCrewTools } from "../packages/service/src/index.js";
 import { continueOrchestratedWorkflow, startOrchestratedWorkflow } from "../packages/orchestrator/src/index.js";
-import { approveWorkflow, type RoleResult, withRepositoryLock } from "../packages/core/src/index.js";
+import { approveWorkflow, repositoryLockPath, type RoleResult, withRepositoryLock } from "../packages/core/src/index.js";
 import type { RoleRunInput } from "../packages/adapters/src/index.js";
 
 async function tempProject(): Promise<string> {
@@ -29,16 +29,60 @@ async function pathExists(path: string): Promise<boolean> {
 test("MCP tool registry exposes the planned DevCrew tools", () => {
   const names = listDevCrewTools().map((tool) => tool.name).sort();
   assert.deepEqual(names, [
+    "devcrew_abort",
     "devcrew_answer",
     "devcrew_approve",
     "devcrew_artifact",
     "devcrew_complete_execution",
     "devcrew_continue",
+    "devcrew_recover",
     "devcrew_reject",
     "devcrew_start",
     "devcrew_status",
     "devcrew_waive_verification",
   ]);
+});
+
+test("devcrew_abort clears the active run and is idempotent", async () => {
+  const cwd = await tempProject();
+  const started = await callDevCrewTool("devcrew_start", {
+    cwd,
+    mode: "feature",
+    request: "Cancel this work",
+    backend: "local",
+  });
+  const runId = (started.structuredContent?.state as { runId: string }).runId;
+
+  const aborted = await callDevCrewTool("devcrew_abort", {
+    cwd,
+    reason: "Requester cancelled this run.",
+  });
+  assert.equal(aborted.isError, false);
+  assert.match(aborted.content[0].text, /status=aborted/);
+  assert.equal((await callDevCrewTool("devcrew_status", { cwd })).isError, true);
+
+  const repeated = await callDevCrewTool("devcrew_abort", {
+    cwd,
+    runId,
+    reason: "Do not replace the original reason.",
+  });
+  assert.equal(repeated.isError, false);
+  assert.match(repeated.content[0].text, /status=aborted/);
+});
+
+test("devcrew_recover clears a stale repository lock without requiring a run", async () => {
+  const cwd = await tempProject();
+  const lockPath = repositoryLockPath(cwd);
+  await mkdir(lockPath, { recursive: true });
+  await writeFile(
+    join(lockPath, "lock.json"),
+    JSON.stringify({ ownerId: "stale", pid: -1, createdAt: "2026-07-14T00:00:00.000Z" }),
+  );
+
+  const recovered = await callDevCrewTool("devcrew_recover", { cwd });
+  assert.equal(recovered.isError, false);
+  assert.match(recovered.content[0].text, /lock recovery completed/i);
+  assert.equal(await pathExists(lockPath), false);
 });
 
 test("devcrew_start exposes explicit execution mode without making apply the default", () => {

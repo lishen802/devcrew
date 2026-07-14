@@ -35,7 +35,7 @@ export type Phase = (typeof PHASES)[number];
 export type GateName = (typeof GATES)[number];
 export type ArtifactName = (typeof ARTIFACTS)[number];
 export type GateStatus = "not_started" | "pending" | "approved" | "rejected";
-export type RunStatus = "ready" | "awaiting_input" | "awaiting_approval" | "awaiting_execution" | "complete";
+export type RunStatus = "ready" | "awaiting_input" | "awaiting_approval" | "awaiting_execution" | "complete" | "aborted";
 
 export interface RoleSection {
   heading: string;
@@ -126,6 +126,11 @@ export interface VerificationWaiver {
   createdAt: string;
 }
 
+export interface RunAbort {
+  reason: string;
+  abortedAt: string;
+}
+
 // Reused for both verification and lint results — the command shape is identical.
 export interface VerificationResult {
   command: string;
@@ -179,6 +184,7 @@ export interface RunState {
   verification: VerificationResult[];
   verificationStatus: VerificationStatus;
   verificationWaiver?: VerificationWaiver;
+  abort?: RunAbort;
   // VerificationResult is reused for lint output — same shape, different semantics.
   lintResults: VerificationResult[];
 }
@@ -213,6 +219,10 @@ export interface AnswerWorkflowInput extends RunRef {
 }
 
 export interface WaiveVerificationInput extends RunRef {
+  reason: string;
+}
+
+export interface AbortWorkflowInput extends RunRef {
   reason: string;
 }
 

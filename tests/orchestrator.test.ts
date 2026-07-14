@@ -6,8 +6,9 @@ import { promisify } from "node:util";
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { approveWorkflow, getWorkflowStatus, rejectWorkflow, startWorkflow, statePath } from "../packages/core/src/index.js";
+import { abortWorkflow, approveWorkflow, getWorkflowStatus, rejectWorkflow, startWorkflow, statePath } from "../packages/core/src/index.js";
 import {
+  abortOrchestratedWorkflow,
   answerOrchestratedWorkflow,
   approveOrchestratedWorkflow,
   completeOrchestratedExecution,
@@ -16,6 +17,7 @@ import {
   runShellCommand,
   startOrchestratedWorkflow,
   waiveOrchestratedVerification,
+  recoverOrchestratedWorkflow,
 } from "../packages/orchestrator/src/index.js";
 import type { RoleRunInput } from "../packages/adapters/src/index.js";
 import type { RoleResult } from "../packages/core/src/index.js";
@@ -515,6 +517,79 @@ test("interactive-host apply waits for native host execution and records its com
   assert.equal(tested.status, "awaiting_approval");
   assert.equal(tested.gates.testing, "pending");
   assert.equal(tested.verificationStatus, "passed");
+});
+
+test("abort cleans an isolated execution workspace without touching the requester checkout", async () => {
+  const cwd = await tempProject();
+  await initGitRepo(cwd);
+  const runner = async (input: RoleRunInput): Promise<RoleResult> => {
+    if (input.phase === "execution") {
+      await writeFile(join(input.cwd, "generated.ts"), "export const generated = true;\n");
+    }
+    return validRoleResult(input);
+  };
+  const started = await startOrchestratedWorkflow({
+    cwd,
+    host: "codex",
+    mode: "feature",
+    request: "Add generated code",
+    backend: "codex",
+    executionMode: "apply",
+    executionPolicy: "headless-restricted",
+  }, runner);
+  await approveWorkflow({ cwd, runId: started.runId, gate: "requirements" });
+  await continueOrchestratedWorkflow({ cwd, runId: started.runId }, runner);
+  await approveWorkflow({ cwd, runId: started.runId, gate: "architecture" });
+  await continueOrchestratedWorkflow({ cwd, runId: started.runId }, runner);
+  await approveWorkflow({ cwd, runId: started.runId, gate: "implementation" });
+  const executed = await continueOrchestratedWorkflow({ cwd, runId: started.runId }, runner);
+  const workspacePath = executed.executionWorkspace?.path;
+  assert.ok(workspacePath);
+
+  const aborted = await abortOrchestratedWorkflow({
+    cwd,
+    runId: started.runId,
+    reason: "Requester cancelled the implementation.",
+  });
+  assert.equal(aborted.status, "aborted");
+  assert.equal(aborted.executionWorkspace, undefined);
+  assert.equal(await pathExists(workspacePath), false);
+  assert.equal(await pathExists(join(cwd, "generated.ts")), false);
+  assert.equal((await continueOrchestratedWorkflow({ cwd, runId: started.runId }, runner)).status, "aborted");
+});
+
+test("recovery cleans the retained worktree of an aborted run", async () => {
+  const cwd = await tempProject();
+  await initGitRepo(cwd);
+  const runner = async (input: RoleRunInput): Promise<RoleResult> => {
+    if (input.phase === "execution") {
+      await writeFile(join(input.cwd, "generated.ts"), "export const generated = true;\n");
+    }
+    return validRoleResult(input);
+  };
+  const started = await startOrchestratedWorkflow({
+    cwd,
+    host: "codex",
+    mode: "feature",
+    request: "Recover generated code",
+    backend: "codex",
+    executionMode: "apply",
+    executionPolicy: "headless-restricted",
+  }, runner);
+  await approveWorkflow({ cwd, runId: started.runId, gate: "requirements" });
+  await continueOrchestratedWorkflow({ cwd, runId: started.runId }, runner);
+  await approveWorkflow({ cwd, runId: started.runId, gate: "architecture" });
+  await continueOrchestratedWorkflow({ cwd, runId: started.runId }, runner);
+  await approveWorkflow({ cwd, runId: started.runId, gate: "implementation" });
+  const executed = await continueOrchestratedWorkflow({ cwd, runId: started.runId }, runner);
+  const workspacePath = executed.executionWorkspace?.path;
+  assert.ok(workspacePath);
+
+  await abortWorkflow({ cwd, runId: started.runId, reason: "Persist cleanup for recovery." });
+  const recovered = await recoverOrchestratedWorkflow({ cwd, runId: started.runId });
+  assert.equal(recovered.status, "aborted");
+  assert.equal(recovered.executionWorkspace, undefined);
+  assert.equal(await pathExists(workspacePath), false);
 });
 
 test("failed verification blocks promotion until an explicit waiver is recorded", async () => {

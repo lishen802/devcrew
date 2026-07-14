@@ -5,6 +5,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  abortWorkflow,
   answerWorkflow,
   approveWorkflow,
   artifactForPhase,
@@ -214,6 +215,36 @@ test("repository lock rejects contention until explicit stale-lock recovery", as
   );
   assert.equal(await recoverRepositoryLock(cwd), true);
   await withRepositoryLock(cwd, async () => undefined);
+});
+
+test("aborted workflows retain audit data and cannot resume", async () => {
+  const cwd = await tempProject();
+  const started = await startWorkflow({
+    cwd,
+    host: "codex",
+    mode: "feature",
+    request: "Stop this workflow",
+  });
+
+  const aborted = await abortWorkflow({
+    cwd,
+    runId: started.runId,
+    reason: "Requester cancelled the work.",
+  });
+  assert.equal(aborted.status, "aborted");
+  assert.equal(aborted.abort?.reason, "Requester cancelled the work.");
+  assert.ok(aborted.abort?.abortedAt);
+  assert.equal((await continueWorkflow({ cwd, runId: started.runId })).status, "aborted");
+  await assert.rejects(
+    () => approveWorkflow({ cwd, runId: started.runId, gate: "requirements" }),
+    /not pending approval/i,
+  );
+  const repeated = await abortWorkflow({
+    cwd,
+    runId: started.runId,
+    reason: "A later reason must not replace the audit record.",
+  });
+  assert.deepEqual(repeated.abort, aborted.abort);
 });
 
 test("apply workflows persist an explicit execution policy and reject unknown policies", async () => {

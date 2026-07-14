@@ -5,6 +5,7 @@ import { dirname } from "node:path";
 import { runRole } from "../../adapters/src/index.js";
 import type { RoleRunInput } from "../../adapters/src/index.js";
 import {
+  abortWorkflow,
   answerWorkflow,
   approveWorkflow,
   artifactForPhase,
@@ -24,6 +25,7 @@ import {
   validateWorkflowApproval,
   waiveVerificationWorkflow,
   type AnswerWorkflowInput,
+  type AbortWorkflowInput,
   type ApproveWorkflowInput,
   type ArtifactName,
   type CompleteExecutionInput,
@@ -515,7 +517,8 @@ export async function continueOrchestratedWorkflow(input: RunRef, runner: RoleRu
     state.status === "awaiting_approval" ||
     state.status === "awaiting_input" ||
     state.status === "awaiting_execution" ||
-    state.status === "complete"
+    state.status === "complete" ||
+    state.status === "aborted"
   ) {
     return state;
   }
@@ -640,6 +643,33 @@ export async function completeOrchestratedExecution(input: CompleteExecutionInpu
 
 export async function rejectOrchestratedWorkflow(input: RejectWorkflowInput): Promise<RunState> {
   return rejectWorkflow(input);
+}
+
+export async function abortOrchestratedWorkflow(input: AbortWorkflowInput): Promise<RunState> {
+  const state = await abortWorkflow(input);
+  if (!state.executionWorkspace) {
+    return state;
+  }
+  try {
+    await cleanupExecutionWorkspace(state);
+  } catch {
+    return state;
+  }
+  state.executionWorkspace = undefined;
+  return saveState(state);
+}
+
+export async function recoverOrchestratedWorkflow(input: RunRef): Promise<RunState> {
+  const state = await getWorkflowStatus(input);
+  if (state.status !== "aborted" && state.status !== "complete") {
+    throw new Error("Only terminal DevCrew runs can be recovered");
+  }
+  if (!state.executionWorkspace) {
+    return state;
+  }
+  await cleanupExecutionWorkspace(state);
+  state.executionWorkspace = undefined;
+  return saveState(state);
 }
 
 export async function answerOrchestratedWorkflow(input: AnswerWorkflowInput, runner: RoleRunner = runRole): Promise<RunState> {

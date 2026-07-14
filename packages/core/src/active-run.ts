@@ -1,4 +1,4 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, unlink, writeFile } from "node:fs/promises";
 
 import { activeRunPath, ensureProjectDirectories } from "./paths.js";
 
@@ -28,4 +28,16 @@ export async function getActiveRunId(cwd: string): Promise<string> {
     // Fall through to the explicit error below.
   }
   throw new Error("No active DevCrew run. Pass runId or start a workflow first.");
+}
+
+export async function clearActiveRunIfMatches(cwd: string, runId: string): Promise<boolean> {
+  try {
+    if ((await getActiveRunId(cwd)) !== runId) {
+      return false;
+    }
+    await unlink(activeRunPath(cwd));
+    return true;
+  } catch {
+    return false;
+  }
 }

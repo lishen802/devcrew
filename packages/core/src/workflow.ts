@@ -22,6 +22,7 @@ import {
 } from "./validation.js";
 import type {
   AnswerWorkflowInput,
+  AbortWorkflowInput,
   ApproveWorkflowInput,
   ArtifactName,
   ArtifactReadResult,
@@ -187,7 +188,8 @@ export async function continueWorkflow(input: RunRef): Promise<RunState> {
     state.status === "awaiting_approval" ||
     state.status === "awaiting_input" ||
     state.status === "awaiting_execution" ||
-    state.status === "complete"
+    state.status === "complete" ||
+    state.status === "aborted"
   ) {
     return state;
   }
@@ -217,6 +219,23 @@ export async function continueWorkflow(input: RunRef): Promise<RunState> {
   state.gates[gate] = "pending";
   state.status = "awaiting_approval";
   await writeCurrentArtifact(state);
+  return saveState(state);
+}
+
+export async function abortWorkflow(input: AbortWorkflowInput): Promise<RunState> {
+  const state = await getWorkflowStatus(input);
+  if (state.status === "aborted") {
+    return state;
+  }
+  if (state.status === "complete") {
+    throw new Error("Completed DevCrew runs cannot be aborted");
+  }
+  state.abort = {
+    reason: parseWaiverReason(input.reason),
+    abortedAt: now(),
+  };
+  delete state.executionInstruction;
+  state.status = "aborted";
   return saveState(state);
 }
 

@@ -42,6 +42,13 @@ The implementation-plan approval advances the run to `execution`. With the defau
 
 Apply requires Git and a clean requester worktree both when execution starts and when the reviewed patch is promoted. The requester repository remains unchanged until testing approval. A failed verification enters `awaiting_input`, rather than a promotable testing gate; it can be revised with `devcrew_answer` or deliberately reopened only through `devcrew_waive_verification` with a non-empty risk reason. If testing is rejected, `devcrew_answer` records the response and returns the run to `execution/ready` with the isolated worktree intact.
 
+`devcrew_abort` stops a nonterminal run with a required reason. It preserves the
+run state and artifacts for audit, removes its isolated worktree when possible,
+and clears the active-run pointer only when it refers to that run. An aborted
+run cannot continue. `devcrew_recover` never runs an agent: it explicitly
+clears only a confirmed stale repository lock and retries cleanup for a
+terminal run that retained an isolated worktree.
+
 The execution review is also structured: the architect must return either
 `Decision: approved` or `Decision: changes_required` in its
 `architecture-review` artifact. A `changes_required` decision rejects the

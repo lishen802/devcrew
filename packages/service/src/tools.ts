@@ -3,6 +3,7 @@ import {
   getActiveRunId,
   getWorkflowStatus,
   setActiveRun,
+  withRepositoryLock,
   type Host,
   type RunState,
 } from "../../core/src/index.js";
@@ -56,6 +57,13 @@ function withInferredHost(args: Record<string, unknown>): Record<string, unknown
     return args;
   }
   return { ...args, host: inferHost() };
+}
+
+async function withMutationLock<T>(args: Record<string, unknown>, action: () => Promise<T>): Promise<T> {
+  if (typeof args.cwd !== "string" || !args.cwd.trim()) {
+    return action();
+  }
+  return withRepositoryLock(args.cwd, action);
 }
 
 export function listDevCrewTools(): DevCrewTool[] {
@@ -213,37 +221,51 @@ function failure(error: unknown): ToolResult {
 export async function callDevCrewTool(name: string, args: Record<string, unknown>): Promise<ToolResult> {
   try {
     if (name === "devcrew_start") {
-      const state = await startOrchestratedWorkflow(withInferredHost(args) as never);
-      await setActiveRun(state.cwd, state.runId);
-      return success(`${summarizeState(state)}. Review ${state.artifacts.requirements}`, { state });
+      return await withMutationLock(args, async () => {
+        const state = await startOrchestratedWorkflow(withInferredHost(args) as never);
+        await setActiveRun(state.cwd, state.runId);
+        return success(`${summarizeState(state)}. Review ${state.artifacts.requirements}`, { state });
+      });
     }
     if (name === "devcrew_status") {
       const state = await getWorkflowStatus((await withActiveRun(args)) as never);
       return success(summarizeState(state), { state });
     }
     if (name === "devcrew_answer") {
-      const state = await answerOrchestratedWorkflow((await withActiveRun(args)) as never);
-      return success(`${summarizeState(state)}. Answer recorded.`, { state });
+      return await withMutationLock(args, async () => {
+        const state = await answerOrchestratedWorkflow((await withActiveRun(args)) as never);
+        return success(`${summarizeState(state)}. Answer recorded.`, { state });
+      });
     }
     if (name === "devcrew_approve") {
-      const state = await approveOrchestratedWorkflow((await withActiveRun(args)) as never);
-      return success(`${summarizeState(state)}. Gate approved.`, { state });
+      return await withMutationLock(args, async () => {
+        const state = await approveOrchestratedWorkflow((await withActiveRun(args)) as never);
+        return success(`${summarizeState(state)}. Gate approved.`, { state });
+      });
     }
     if (name === "devcrew_reject") {
-      const state = await rejectOrchestratedWorkflow((await withActiveRun(args)) as never);
-      return success(`${summarizeState(state)}. Gate rejected.`, { state });
+      return await withMutationLock(args, async () => {
+        const state = await rejectOrchestratedWorkflow((await withActiveRun(args)) as never);
+        return success(`${summarizeState(state)}. Gate rejected.`, { state });
+      });
     }
     if (name === "devcrew_continue") {
-      const state = await continueOrchestratedWorkflow((await withActiveRun(args)) as never);
-      return success(`${summarizeState(state)}.`, { state });
+      return await withMutationLock(args, async () => {
+        const state = await continueOrchestratedWorkflow((await withActiveRun(args)) as never);
+        return success(`${summarizeState(state)}.`, { state });
+      });
     }
     if (name === "devcrew_complete_execution") {
-      const state = await completeOrchestratedExecution((await withActiveRun(args)) as never);
-      return success(`${summarizeState(state)}. Native host completion recorded.`, { state });
+      return await withMutationLock(args, async () => {
+        const state = await completeOrchestratedExecution((await withActiveRun(args)) as never);
+        return success(`${summarizeState(state)}. Native host completion recorded.`, { state });
+      });
     }
     if (name === "devcrew_waive_verification") {
-      const state = await waiveOrchestratedVerification((await withActiveRun(args)) as never);
-      return success(`${summarizeState(state)}. Verification waiver recorded.`, { state });
+      return await withMutationLock(args, async () => {
+        const state = await waiveOrchestratedVerification((await withActiveRun(args)) as never);
+        return success(`${summarizeState(state)}. Verification waiver recorded.`, { state });
+      });
     }
     if (name === "devcrew_artifact") {
       const artifact = await getArtifact((await withActiveRun(args)) as never);

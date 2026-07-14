@@ -19,9 +19,12 @@ import {
   loadState,
   rejectWorkflow,
   readConfig,
+  recoverRepositoryLock,
+  repositoryLockPath,
   runDir,
   saveState,
   startWorkflow,
+  withRepositoryLock,
   writeArtifact,
 } from "../packages/core/src/index.js";
 
@@ -179,6 +182,38 @@ test("readConfig defaults omitted command lists while validating supplied comman
   const config = await readConfig(cwd);
   assert.deepEqual(config.lintCommands, []);
   assert.deepEqual(config.coverageCommands, []);
+});
+
+test("repository lock rejects contention until explicit stale-lock recovery", async () => {
+  const cwd = await tempProject();
+  let release!: () => void;
+  let entered!: () => void;
+  const enteredLock = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const holdLock = withRepositoryLock(cwd, async () => {
+    entered();
+    await new Promise<void>((resolve) => {
+      release = resolve;
+    });
+  });
+  await enteredLock;
+  await assert.rejects(
+    () => withRepositoryLock(cwd, async () => undefined),
+    /already in progress/i,
+  );
+  release();
+  await holdLock;
+
+  const lockPath = repositoryLockPath(cwd);
+  await mkdir(lockPath, { recursive: true });
+  await writeFile(join(lockPath, "lock.json"), JSON.stringify({ ownerId: "stale", pid: -1, createdAt: "2026-07-14T00:00:00.000Z" }));
+  await assert.rejects(
+    () => withRepositoryLock(cwd, async () => undefined),
+    /explicit recovery/i,
+  );
+  assert.equal(await recoverRepositoryLock(cwd), true);
+  await withRepositoryLock(cwd, async () => undefined);
 });
 
 test("apply workflows persist an explicit execution policy and reject unknown policies", async () => {

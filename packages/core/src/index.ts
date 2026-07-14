@@ -1,6 +1,7 @@
 export * from "./active-run.js";
 export * from "./artifacts.js";
 export * from "./config.js";
+export * from "./lock.js";
 export * from "./paths.js";
 export * from "./standards.js";
 export * from "./store.js";

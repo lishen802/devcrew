@@ -31,6 +31,10 @@ export function activeRunPath(cwd: string): string {
   return join(devcrewDir(cwd), "active-run.json");
 }
 
+export function repositoryLockPath(cwd: string): string {
+  return join(devcrewDir(cwd), "lock");
+}
+
 export function standardsPath(cwd: string): string {
   return join(devcrewDir(cwd), "standards.md");
 }

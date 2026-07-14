@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 
 import { callDevCrewTool, listDevCrewTools } from "../packages/service/src/index.js";
 import { continueOrchestratedWorkflow, startOrchestratedWorkflow } from "../packages/orchestrator/src/index.js";
-import { approveWorkflow, type RoleResult } from "../packages/core/src/index.js";
+import { approveWorkflow, type RoleResult, withRepositoryLock } from "../packages/core/src/index.js";
 import type { RoleRunInput } from "../packages/adapters/src/index.js";
 
 async function tempProject(): Promise<string> {
@@ -86,6 +86,29 @@ test("run-scoped MCP tools can omit runId and use the active run", async () => {
   });
   assert.equal(artifact.isError, false);
   assert.match(artifact.content[0].text, /Architecture/);
+});
+
+test("MCP mutations reject a busy repository lock while status stays available", async () => {
+  const cwd = await tempProject();
+  const started = await callDevCrewTool("devcrew_start", {
+    cwd,
+    mode: "feature",
+    request: "Protect concurrent mutation",
+    backend: "local",
+  });
+  assert.equal(started.isError, false);
+
+  await withRepositoryLock(cwd, async () => {
+    const status = await callDevCrewTool("devcrew_status", { cwd });
+    assert.equal(status.isError, false);
+
+    const approval = await callDevCrewTool("devcrew_approve", {
+      cwd,
+      gate: "requirements",
+    });
+    assert.equal(approval.isError, true);
+    assert.match(approval.content[0].text, /already in progress/i);
+  });
 });
 
 test("devcrew_start infers host from DEVCREW_HOST when host is omitted", async () => {

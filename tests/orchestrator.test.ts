@@ -384,7 +384,9 @@ test("apply mode plans read-only before executing in a worktree", async () => {
 test("architecture review blocks testing when it requires changes", async () => {
   const cwd = await tempProject();
   await initGitRepo(cwd);
+  const calls: RoleRunInput[] = [];
   const runner = async (input: RoleRunInput): Promise<RoleResult> => {
+    calls.push(input);
     if (input.phase === "execution") {
       await writeFile(join(input.cwd, "generated.ts"), "export const generated = true;\n");
     }
@@ -428,6 +430,23 @@ test("architecture review blocks testing when it requires changes", async () => 
     () => approveWorkflow({ cwd, runId: started.runId, gate: "implementation-review" }),
     /not pending approval/,
   );
+
+  const workspacePath = reviewed.executionWorkspace?.path;
+  assert.ok(workspacePath);
+  const revised = await answerOrchestratedWorkflow({
+    cwd,
+    runId: started.runId,
+    answer: "Revise the generated API to match the approved contract.",
+  }, runner);
+  assert.equal(revised.phase, "execution");
+  assert.equal(revised.status, "ready");
+  assert.equal(revised.gates["implementation-review"], "not_started");
+  assert.equal(revised.executionWorkspace?.path, workspacePath);
+
+  const reexecuted = await continueOrchestratedWorkflow({ cwd, runId: started.runId }, runner);
+  assert.equal(calls.at(-1)?.phase, "execution");
+  assert.equal(reexecuted.phase, "review");
+  assert.equal(reexecuted.status, "ready");
 });
 
 test("interactive-host apply waits for native host execution and records its completion", async () => {

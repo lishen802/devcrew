@@ -655,6 +655,17 @@ export async function answerOrchestratedWorkflow(input: AnswerWorkflowInput, run
     state.gates.testing = "not_started";
     return saveState(state);
   }
+  if (
+    before.executionMode === "apply" &&
+    before.phase === "review" &&
+    before.gates["implementation-review"] === "rejected" &&
+    before.architectureReview?.decision === "changes_required"
+  ) {
+    state.phase = "execution";
+    state.status = "ready";
+    state.gates["implementation-review"] = "not_started";
+    return saveState(state);
+  }
 
   const role = roleForPhase(state.phase);
   if (!role) {

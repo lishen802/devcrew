@@ -45,8 +45,10 @@ Apply requires Git and a clean requester worktree both when execution starts and
 The execution review is also structured: the architect must return either
 `Decision: approved` or `Decision: changes_required` in its
 `architecture-review` artifact. A `changes_required` decision rejects the
-implementation-review gate and keeps the run at `awaiting_input`; it cannot
-enter testing until the feedback is addressed and a later review approves it.
+implementation-review gate and keeps the run at `awaiting_input`. Submitting
+`devcrew_answer` then returns the run to `execution/ready` in the same
+isolated worktree, resets that review gate, and requires a new implementation
+pass followed by a later approving review before testing can start.
 
 `devcrew_start` records the created run as the active run for the repository.
 Subsequent MCP calls can omit `runId`; DevCrew resolves it from

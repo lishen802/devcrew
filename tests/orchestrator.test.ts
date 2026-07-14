@@ -168,6 +168,103 @@ test("PM questions move the workflow to awaiting_input until the requester respo
   assert.deepEqual(receivedAnswers, ["CSV and JSON are required."]);
 });
 
+test("structured PM questions move the workflow to awaiting_input", async () => {
+  const cwd = await tempProject();
+  const runner = async (input: RoleRunInput): Promise<RoleResult> => {
+    if (input.role !== "pm") {
+      return validRoleResult(input);
+    }
+    return {
+      ...validRoleResult(input),
+      format: "structured",
+      structured: {
+        schemaVersion: 1,
+        role: "pm",
+        summary: "Need export scope",
+        risks: [],
+        evidence: [],
+        questions: [{ id: "format", prompt: "Which export formats are required?" }],
+      },
+      questions: undefined,
+    };
+  };
+
+  const started = await startOrchestratedWorkflow({
+    cwd,
+    host: "codex",
+    mode: "feature",
+    request: "Add billing export",
+    backend: "codex",
+  }, runner);
+
+  assert.equal(started.status, "awaiting_input");
+  assert.deepEqual(started.pendingQuestions, ["Which export formats are required?"]);
+  assert.equal(started.roles.at(-1)?.structured?.questions?.[0]?.id, "format");
+});
+
+test("structured implementer and tester evidence is rendered into role artifacts", async () => {
+  const cwd = await tempProject();
+  const runner = async (input: RoleRunInput): Promise<RoleResult> => {
+    if (input.role === "implementer") {
+      return {
+        ...validRoleResult(input),
+        format: "structured",
+        structured: {
+          schemaVersion: 1,
+          role: "implementer",
+          summary: "Implemented export",
+          risks: ["Large exports need pagination follow-up."],
+          evidence: [{ command: "npm test", exitCode: 0, output: "ok" }],
+          changedFiles: ["src/export.ts"],
+        },
+      };
+    }
+    if (input.role === "tester") {
+      return {
+        ...validRoleResult(input),
+        format: "structured",
+        structured: {
+          schemaVersion: 1,
+          role: "tester",
+          summary: "Verified export",
+          risks: ["Browser compatibility was not exercised."],
+          evidence: [{ command: "npm test", exitCode: 0, output: "ok" }],
+          testCases: [{
+            id: "export-csv",
+            scenario: "Export an invoice as CSV",
+            type: "happy",
+            expected: "A CSV download is returned.",
+          }],
+        },
+      };
+    }
+    return validRoleResult(input);
+  };
+
+  const started = await startOrchestratedWorkflow({
+    cwd,
+    host: "codex",
+    mode: "feature",
+    request: "Add billing export",
+    backend: "codex",
+  }, runner);
+  await approveWorkflow({ cwd, runId: started.runId, gate: "requirements" });
+  await continueOrchestratedWorkflow({ cwd, runId: started.runId }, runner);
+  await approveWorkflow({ cwd, runId: started.runId, gate: "architecture" });
+  const implementation = await continueOrchestratedWorkflow({ cwd, runId: started.runId }, runner);
+
+  const implementationArtifact = await readFile(implementation.artifacts["implementation-plan"] ?? "", "utf8");
+  assert.match(implementationArtifact, /## Structured Role Result/);
+  assert.match(implementationArtifact, /src\/export\.ts/);
+  assert.match(implementationArtifact, /npm test.*exit code 0/is);
+
+  await approveWorkflow({ cwd, runId: started.runId, gate: "implementation" });
+  const testing = await continueOrchestratedWorkflow({ cwd, runId: started.runId }, runner);
+  const testArtifact = await readFile(testing.artifacts["test-report"] ?? "", "utf8");
+  assert.match(testArtifact, /Browser compatibility was not exercised/);
+  assert.match(testArtifact, /export-csv/);
+});
+
 test("configured optional gates advance without bypassing the workflow", async () => {
   const cwd = await tempProject();
   await mkdir(join(cwd, ".devcrew"), { recursive: true });

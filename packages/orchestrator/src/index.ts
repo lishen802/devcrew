@@ -317,16 +317,57 @@ function parseCompletionVerification(value: unknown): VerificationResult[] {
   });
 }
 
-function appendExecutionSections(artifact: ArtifactName, markdown: string, state: RunState): string {
+function structuredRoleResultBlock(result: RoleResult): string {
+  if (result.format !== "structured" || !result.structured) {
+    return "";
+  }
+  const data = result.structured;
+  const sections = [
+    "## Structured Role Result",
+    "",
+    `Schema Version: ${data.schemaVersion}`,
+    `Summary: ${data.summary}`,
+  ];
+  if (data.questions?.length) {
+    sections.push("", "### Questions", "", ...data.questions.map((question) => `- ${question.id}: ${question.prompt}`));
+  }
+  if (data.decisions?.length) {
+    sections.push("", "### Decisions", "", ...data.decisions.map((decision) => `- ${decision}`));
+  }
+  if (data.changedFiles?.length) {
+    sections.push("", "### Changed Files", "", ...data.changedFiles.map((file) => `- ${file}`));
+  }
+  if (data.evidence.length) {
+    sections.push("", "### Command Evidence", "");
+    for (const evidence of data.evidence) {
+      sections.push(`- \`${evidence.command}\` — exit code ${evidence.exitCode}`);
+      if (evidence.output) {
+        sections.push("", "```text", evidence.output, "```");
+      }
+    }
+  }
+  if (data.testCases?.length) {
+    sections.push("", "### Test Cases", "", "| ID | Scenario | Type | Expected |", "| --- | --- | --- | --- |");
+    sections.push(...data.testCases.map((testCase) => `| ${testCase.id} | ${testCase.scenario} | ${testCase.type} | ${testCase.expected} |`));
+  }
+  if (data.risks.length) {
+    sections.push("", "### Risks", "", ...data.risks.map((risk) => `- ${risk}`));
+  }
+  return `\n\n${sections.join("\n")}`;
+}
+
+function appendExecutionSections(artifact: ArtifactName, markdown: string, state: RunState, result?: RoleResult): string {
+  let content = markdown.trim();
+  if (result?.format === "structured" && !content.includes("## Structured Role Result")) {
+    content += structuredRoleResultBlock(result);
+  }
   if (artifact === "architecture-review" && state.architectureReview) {
-    let content = markdown.trim();
     if (!content.includes("## Review Decision")) {
       content += `\n\n## Review Decision\n\nDecision: ${state.architectureReview.decision}\n\nSummary: ${state.architectureReview.summary}`;
     }
     return `${content}\n`;
   }
   if (artifact === "test-report") {
-    let content = markdown.trim();
     if (!content.includes("## Acceptance Evidence")) {
       content += `\n\n## Acceptance Evidence\n\n${verificationBlock(state.verification)}`;
     }
@@ -338,7 +379,7 @@ function appendExecutionSections(artifact: ArtifactName, markdown: string, state
     }
     return `${content}\n`;
   }
-  return markdown;
+  return `${content}\n`;
 }
 
 async function writeImplementationReview(state: RunState): Promise<void> {
@@ -459,11 +500,12 @@ async function runCurrentPhaseRole(state: RunState, runner: RoleRunner = runRole
   }
 
   if (state.phase === "review") {
-    if (!result.reviewDecision) {
+    const reviewDecision = result.format === "structured" ? result.structured?.reviewDecision : result.reviewDecision;
+    if (!reviewDecision) {
       throw new Error("DevCrew architecture review must return a structured review decision");
     }
     state.architectureReview = {
-      decision: result.reviewDecision,
+      decision: reviewDecision,
       summary: result.summary,
       reviewedAt: now(),
     };
@@ -472,12 +514,15 @@ async function runCurrentPhaseRole(state: RunState, runner: RoleRunner = runRole
   // When the backend cannot run a real SDK we keep a single deterministic
   // artifact source by rendering the rich phase template from the core layer.
   const baseMarkdown = result.usedFallback ? `${fallbackNotice(result)}${renderArtifact(artifact, state)}` : result.markdown;
-  const markdown = appendExecutionSections(artifact, baseMarkdown, state);
+  const markdown = appendExecutionSections(artifact, baseMarkdown, state, result);
   state.roles.push({ ...result, markdown });
   state.artifacts[artifact] = await writeMarkdownArtifact(state, artifact, markdown);
   state.executionInstruction = undefined;
-  if (state.phase === "requirements" && result.questions && result.questions.length > 0) {
-    state.pendingQuestions = result.questions;
+  const questions = result.format === "structured"
+    ? result.structured?.questions?.map((question) => question.prompt) ?? []
+    : result.questions ?? [];
+  if (state.phase === "requirements" && questions.length > 0) {
+    state.pendingQuestions = questions;
     state.gates.requirements = "not_started";
     state.status = "awaiting_input";
     return saveState(state);
@@ -636,7 +681,7 @@ export async function completeOrchestratedExecution(input: CompleteExecutionInpu
   await writeImplementationReview(state);
   const result = hostCompletionResult(state, summary);
   const artifact = artifactForPhase(state.phase);
-  const markdown = appendExecutionSections(artifact, result.markdown, state);
+  const markdown = appendExecutionSections(artifact, result.markdown, state, result);
   state.roles.push({ ...result, markdown });
   state.artifacts[artifact] = await writeMarkdownArtifact(state, artifact, markdown);
   state.executionInstruction = undefined;

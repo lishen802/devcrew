@@ -41,7 +41,7 @@ For local plugin testing:
 claude --plugin-dir plugins/devcrew-claude
 ```
 
-Then ask Claude Code to use DevCrew for a feature or product workflow. The generated `.mcp.json` starts the version-locked npm package with an `npm exec --package=@shenlee/devcrew@0.1.4` wrapper.
+Then ask Claude Code to use DevCrew for a feature or product workflow. The generated `.mcp.json` starts the version-locked npm package with an `npm exec --package=@shenlee/devcrew@0.1.5` wrapper.
 
 The default apply policy is `interactive-host`: Claude Code performs implementation and testing with its native controls. Explicit `headless-restricted` and `headless-unattended` policies are independent DevCrew SDK policies and do not inherit the current Claude Code approval session.
 

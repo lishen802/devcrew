@@ -1,6 +1,6 @@
 {
   "name": "devcrew",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "DevCrew gated multi-role workflow service for Codex.",
   "author": {
     "name": "DevCrew Contributors",

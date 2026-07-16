@@ -1,3 +1,6 @@
+import { accessSync, constants, realpathSync } from "node:fs";
+import { delimiter, join, sep } from "node:path";
+
 import { DEVCREW_NPM_PACKAGE, ROLE_SECTIONS } from "../../core/src/index.js";
 import type {
   ArtifactName,
@@ -338,7 +341,7 @@ function titleForPhase(phase: Phase): string {
 // --- Host SDK contracts -----------------------------------------------------
 // These types pin the published surface of the optional host SDKs so the
 // adapter logic is type-checked even though the packages are not installed.
-// Verified against @openai/codex-sdk 0.136.0 (sdk/typescript/src/threadOptions.ts
+// Verified against @openai/codex-sdk 0.144.5 (sdk/typescript/src/threadOptions.ts
 // and thread.ts) and @anthropic-ai/claude-agent-sdk (Agent SDK TypeScript
 // reference). Update these when the upstream contracts change.
 
@@ -368,7 +371,11 @@ interface CodexClient {
   startThread: (options?: CodexThreadOptions) => CodexThread;
 }
 
-type CodexConstructor = new () => CodexClient;
+interface CodexClientOptions {
+  codexPathOverride?: string;
+}
+
+type CodexConstructor = new (options?: CodexClientOptions) => CodexClient;
 
 export type ClaudePermissionMode = "default" | "acceptEdits" | "bypassPermissions" | "dontAsk" | "plan";
 
@@ -535,10 +542,52 @@ function claudeOptionsForRole(input: RoleRunInput): ClaudeQueryOptions {
   return buildClaudeOptions(input.cwd, "dontAsk", allowedTools);
 }
 
+function resolveHostCodexExecutable(): string | undefined {
+  const explicitPath = process.env.DEVCREW_CODEX_PATH?.trim();
+  if (explicitPath) {
+    return explicitPath;
+  }
+
+  const pathValue = process.env.PATH ?? Object.entries(process.env)
+    .find(([key]) => key.toLowerCase() === "path")?.[1];
+  if (!pathValue) {
+    return undefined;
+  }
+
+  const executableNames = process.platform === "win32"
+    ? ["codex.exe", "codex.cmd", "codex.bat", "codex"]
+    : ["codex"];
+  for (const entry of pathValue.split(delimiter)) {
+    const directory = entry.trim().replace(/^"|"$/g, "");
+    if (!directory) {
+      continue;
+    }
+    for (const executableName of executableNames) {
+      const candidate = join(directory, executableName);
+      try {
+        accessSync(candidate, process.platform === "win32" ? constants.F_OK : constants.X_OK);
+        const normalizedCandidate = candidate.split(sep).join("/");
+        const normalizedRealPath = realpathSync(candidate).split(sep).join("/");
+        if (
+          normalizedCandidate.includes("/node_modules/.bin/")
+          || normalizedRealPath.includes("/node_modules/@openai/codex/")
+        ) {
+          continue;
+        }
+        return candidate;
+      } catch {
+        // Keep searching PATH; the SDK's packaged runtime remains the fallback.
+      }
+    }
+  }
+  return undefined;
+}
+
 async function runWithCodex(input: RoleRunInput, prompt: string, loadModule: ModuleLoader): Promise<string> {
   const mod = await loadModule(HOST_SDK_PACKAGES.codex);
   const CodexClass = mod.Codex as CodexConstructor;
-  const codex = new CodexClass();
+  const codexPathOverride = resolveHostCodexExecutable();
+  const codex = new CodexClass(codexPathOverride ? { codexPathOverride } : undefined);
   const thread = codex.startThread(codexOptionsForRole(input));
   const turn = await thread.run(prompt);
   return extractCodexText(turn);

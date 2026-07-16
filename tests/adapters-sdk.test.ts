@@ -1,5 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { delimiter, join } from "node:path";
 
 import {
   buildClaudeOptions,
@@ -244,7 +247,24 @@ test("extractClaudeResult surfaces the real failure subtype", () => {
 
 // --- runRole wiring with an injected fake SDK module ------------------------
 
-test("runRole drives the Codex SDK with the pinned thread options and returns finalResponse", async () => {
+test("runRole drives the Codex SDK through the host executable with pinned thread options", async () => {
+  const pathRoot = await mkdtemp(join(tmpdir(), "devcrew-host-codex-"));
+  const sdkBinDirectory = join(pathRoot, "node_modules", ".bin");
+  const hostBinDirectory = join(pathRoot, "host", "bin");
+  await Promise.all([
+    mkdir(sdkBinDirectory, { recursive: true }),
+    mkdir(hostBinDirectory, { recursive: true }),
+  ]);
+  const executableName = process.platform === "win32" ? "codex.exe" : "codex";
+  const sdkCodexPath = join(sdkBinDirectory, executableName);
+  const codexPath = join(hostBinDirectory, executableName);
+  await writeFile(sdkCodexPath, "sdk codex placeholder");
+  await writeFile(codexPath, "host codex placeholder");
+  await Promise.all([chmod(sdkCodexPath, 0o755), chmod(codexPath, 0o755)]);
+
+  const originalPath = process.env.PATH;
+  process.env.PATH = `${sdkBinDirectory}${delimiter}${hostBinDirectory}`;
+  let receivedClientOptions: { codexPathOverride?: string } | undefined;
   let receivedOptions: CodexThreadOptions | undefined;
   let receivedPrompt = "";
 
@@ -252,6 +272,10 @@ test("runRole drives the Codex SDK with the pinned thread options and returns fi
     assert.equal(specifier, "@openai/codex-sdk");
     return {
       Codex: class {
+        constructor(options?: { codexPathOverride?: string }) {
+          receivedClientOptions = options;
+        }
+
         startThread(options?: CodexThreadOptions) {
           receivedOptions = options;
           return {
@@ -265,17 +289,24 @@ test("runRole drives the Codex SDK with the pinned thread options and returns fi
     };
   };
 
-  const result = await runRole({ ...baseInput, backend: "codex" }, { loadModule });
+  try {
+    const result = await runRole({ ...baseInput, backend: "codex" }, { loadModule });
 
-  assert.equal(result.usedFallback, false);
-  assert.equal(result.backend, "codex");
-  assert.match(result.markdown, /Real SDK output/);
-  assert.deepEqual(receivedOptions, {
-    workingDirectory: "/tmp/project",
-    skipGitRepoCheck: true,
-    sandboxMode: "read-only",
-  });
-  assert.match(receivedPrompt, /Add billing export/);
+    assert.equal(result.usedFallback, false);
+    assert.equal(result.backend, "codex");
+    assert.match(result.markdown, /Real SDK output/);
+    assert.deepEqual(receivedClientOptions, { codexPathOverride: codexPath });
+    assert.deepEqual(receivedOptions, {
+      workingDirectory: "/tmp/project",
+      skipGitRepoCheck: true,
+      sandboxMode: "read-only",
+    });
+    assert.match(receivedPrompt, /Add billing export/);
+  } finally {
+    if (originalPath === undefined) delete process.env.PATH;
+    else process.env.PATH = originalPath;
+    await rm(pathRoot, { recursive: true, force: true });
+  }
 });
 
 test("runRole falls back with a clear reason when the Codex turn is empty", async () => {

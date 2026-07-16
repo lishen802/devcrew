@@ -35,7 +35,7 @@ Restart Codex, open the plugin directory, choose the DevCrew marketplace, and in
 The plugin starts the DevCrew MCP server with:
 
 ```bash
-npm exec --silent --yes --package=@shenlee/devcrew@0.1.4 -- node -e "<DevCrew CLI wrapper>" -- serve --stdio
+npm exec --silent --yes --package=@shenlee/devcrew@0.1.5 -- node -e "<DevCrew CLI wrapper>" -- serve --stdio
 ```
 
 The plugin locks the MCP server to the published npm package version, so users do not need to clone the source or build TypeScript at install time. You only need Node.js and network access the first time Codex starts the MCP server.
